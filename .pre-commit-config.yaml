@@ -59,26 +59,42 @@ repos:
         pass_filenames: false
         files: \.rs$
       # The domain-freedom assertion, run as a check rather than left as a
-      # promise in the README. This crate exists to be retrofitted onto the
-      # daemon it was extracted from, and a single leaked identifier from
-      # either that daemon's problem domain or this workspace's other one is
-      # enough to make the retrofit impossible — quietly, at review time,
-      # months later.
+      # promise in the README. This crate exists to be adopted by daemons that
+      # agree about nothing except that they have a Unix socket, and a single
+      # leaked identifier from any one consumer's problem domain is enough to
+      # make the next adoption impossible — quietly, at review time, months
+      # later.
+      #
+      # `examples/` and `tests/` are scanned too. Leaving them out was
+      # backwards: the example is the first file a stranger reads, and a test
+      # is where a real contract's vocabulary is most tempting to reach for, so
+      # those are exactly the places a leak would be least visible.
       - id: no-domain-knowledge
-        name: the framework knows nothing about what it serves
+        name: this crate knows nothing about what it serves
         language: system
         entry: sh
         args:
           - -c
           - |
-            leaked="$(grep -rinE 'vfio|libvirt|route.?config|network' src/ || true)"
+            # `|| true` would have been wrong here. grep exits 1 for "no match"
+            # and >1 for "the scan itself failed" -- an unreadable or renamed
+            # src/, examples/ or tests/ -- and collapsing those two into success
+            # is how a load-bearing guard reports a clean tree while looking at
+            # nothing. Only exit 1 is a pass.
+            leaked="$(grep -rinE 'vfio|libvirt|route.?config|network' src/ examples/ tests/)"
+            status=$?
+            if [ "$status" -gt 1 ]; then
+              echo "the domain-knowledge scan could not run (grep exit $status);"
+              echo "this guard looked at nothing, which is not the same as finding nothing."
+              exit "$status"
+            fi
             [ -z "$leaked" ] || {
-              echo "domain knowledge leaked into src/:"
+              echo "domain knowledge leaked into src/, examples/ or tests/:"
               echo "$leaked"
               exit 1
             }
         pass_filenames: false
-        files: ^src/.*\.rs$
+        files: ^(src|examples|tests)/.*\.rs$
 
   # The content policy, the guards and the declaration check. Every id is a
   # stage, and which rules have something to say at that stage is decided by

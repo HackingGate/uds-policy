@@ -1,22 +1,21 @@
 [package]
-name = "uds-daemon"
+name = "uds-policy"
 version = "0.1.0"
 edition = "2024"
 authors = ["HackingGate"]
-description = "Domain-agnostic HTTP/JSON over AF_UNIX daemon framework: socket lifecycle, SO_PEERCRED caller identity, authorization seam, audit and watchdog"
-repository = "https://github.com/HackingGate/uds-daemon"
+description = "The wire-agnostic half of a privileged AF_UNIX daemon: socket lifecycle, SO_PEERCRED caller identity, an authorization seam, an audit trail and a busy-vs-wedged systemd watchdog"
+repository = "https://github.com/HackingGate/uds-policy"
 license = "Apache-2.0"
 readme = "README.md"
 rust-version = "1.97.1"
-keywords = ["unix-socket", "daemon", "systemd", "http", "linux"]
-categories = ["network-programming", "os::unix-apis"]
+keywords = ["unix-socket", "daemon", "systemd", "authorization", "linux"]
+categories = ["os::unix-apis", "authentication"]
 
 [dependencies]
 # SO_PEERCRED, SO_RCVTIMEO and the NSS lookups, in a wrapper that needs no
 # `unsafe` here. See README.md for why this crate does not reach for the
 # private, Zig-backed bridge the same code used before it was extracted.
 nix = { version = "0.31", features = ["socket", "time", "user"] }
-serde_json = "1.0"
 
 [dev-dependencies]
 tempfile = "3.26"

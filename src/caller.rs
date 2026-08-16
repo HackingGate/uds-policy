@@ -1,18 +1,19 @@
 //! Who asked.
 //!
-//! The audit trail ([`crate::Handler`]) records what the daemon did. Naming
+//! The audit trail ([`crate::Operation`]) records what the daemon did. Naming
 //! the operation, the target and the result is not enough when one socket
 //! serves several front-ends under several accounts: the journal then says
 //! that *something* reconfigured the host, and cannot say which of them.
 //!
 //! ## Why the kernel's answer and not the request's
 //!
-//! Nothing in an HTTP request can establish who sent it: a header is a claim by
-//! the party being identified. `SO_PEERCRED` is filled in by the kernel from
-//! the peer's credentials at `connect(2)` time, so the peer cannot forge it and
-//! cannot change it afterwards by changing uid or `exec`ing. The framework
-//! reads it once per connection, *before* the first request byte is parsed, so
-//! a malformed or truncated request is still attributable.
+//! Nothing a request carries can establish who sent it: a field naming the
+//! sender is a claim by the party being identified. `SO_PEERCRED` is filled in
+//! by the kernel from the peer's credentials at `connect(2)` time, so the peer
+//! cannot forge it and cannot change it afterwards by changing uid or
+//! `exec`ing. [`crate::Socket::accept`] reads it once per connection and hands
+//! it back with the stream, *before* the first request byte is read, so a
+//! malformed or truncated request is still attributable.
 //!
 //! This crate denies `unsafe_code` and `UnixStream::peer_cred` is still
 //! nightly-only, so the call goes through `nix`.

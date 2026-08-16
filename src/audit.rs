@@ -1,6 +1,6 @@
 //! An audit trail for the calls this daemon runs.
 //!
-//! The daemon this framework was extracted from once answered "what happened?"
+//! The daemon this layer was extracted from once answered "what happened?"
 //! with three journal lines for an entire boot, one of which was a broken pipe,
 //! while it had in fact deactivated, deleted, recreated, activated and reapplied
 //! a live configuration. Reconstructing that took cross-referencing another
@@ -21,81 +21,118 @@
 //!
 //! Requests carry secrets. The daemon this came from assembled a target string
 //! from an allowlist of identifying keys — which works, and is domain
-//! knowledge: the allowlist is a list of *this contract's* field names. A
-//! framework that shipped one would either be wrong for its consumer or be
+//! knowledge: the allowlist is a list of *that contract's* field names. A
+//! general layer that shipped one would either be wrong for its consumer or be
 //! carrying a consumer's vocabulary.
 //!
-//! So the framework logs nothing from the payload at all, and the line is
-//! assembled from the [`Route`] instead: the path, the action id, and the
-//! caller. A service that wants a target in the trail is the right place to put
-//! one, because it is the only party that knows which field names identify
-//! rather than expose.
+//! So nothing from the payload is logged at all, and the line is assembled from
+//! the [`Call`] instead: the name, the action id, and the caller. A daemon that
+//! wants a target in the trail is the right place to put one, because it is the
+//! only party that knows which field names identify rather than expose.
+//!
+//! ## Why the failure text is a plain string
+//!
+//! It used to be the transport's already-encoded error, carrying a status code.
+//! There is no transport here to have one. What reaches the journal is whatever
+//! the daemon can say about the failure in words, bounded and flattened on the
+//! way in — see [`Operation::finish`].
+//!
+//! [`Authorization::Policy`]: crate::Authorization::Policy
 
+use crate::call::{Authorization, Call};
 use crate::caller::Caller;
-use crate::service::{Authorization, Route, WireError};
 use std::time::Instant;
 
-/// How much of a service-supplied failure body reaches the journal.
-const MAX_FAILURE_CHARS: usize = 256;
+/// How much of a daemon-supplied failure description reaches the journal.
+pub const MAX_FAILURE_CHARS: usize = 256;
 
 /// An operation in flight. Announces itself on creation and reports its
-/// outcome when the caller finishes it.
+/// outcome when the daemon finishes it.
+///
+/// Constructed for every call and audited only for the gated ones: an
+/// unprivileged call produces an `Operation` that writes nothing at either end,
+/// so a dispatch site needs no `if` around its own audit trail and cannot drift
+/// out of step with the policy tag.
 #[derive(Debug)]
-pub(crate) struct Operation {
+pub struct Operation {
     service: &'static str,
-    label: String,
+    /// `Some` for an audited operation, holding the line it announced itself
+    /// with. `None` for a read, which is silent at both ends.
+    label: Option<String>,
     started: Instant,
 }
 
 impl Operation {
-    /// Begin auditing `route` if it changes something; `None` for a read.
-    pub(crate) fn begin(service: &'static str, route: Route, caller: &Caller) -> Option<Self> {
-        let Authorization::Policy(action) = route.authorization else {
-            return None;
+    /// Begin auditing `call`, announcing it now if it changes something.
+    ///
+    /// The announcement is written *before* the work runs, so an operation that
+    /// never returns is still on the record.
+    #[must_use]
+    pub fn begin(service: &'static str, call: Call, caller: &Caller) -> Self {
+        let started = Instant::now();
+        let Authorization::Policy(action) = call.authorization else {
+            return Self {
+                service,
+                label: None,
+                started,
+            };
         };
-        let label = describe(route, action, caller);
+        let label = describe(call, action, caller);
         eprintln!("{service}: audit: begin {label}");
-        Some(Self {
+        Self {
             service,
-            label,
-            started: Instant::now(),
-        })
+            label: Some(label),
+            started,
+        }
     }
 
-    /// Report the outcome. Called for both arms so a failed operation is as
-    /// visible as a successful one — the outage that prompted this had no
-    /// record of either.
-    pub(crate) fn finish(self, error: Option<&WireError>) {
+    /// Whether this operation writes journal lines at all.
+    ///
+    /// False for an unprivileged call. Exposed so a daemon can assert on the
+    /// restraint rather than take it on trust.
+    #[must_use]
+    pub const fn is_audited(&self) -> bool {
+        self.label.is_some()
+    }
+
+    /// Report the outcome, with `None` for success.
+    ///
+    /// Called for both arms so a failed operation is as visible as a successful
+    /// one — the outage that prompted this had a record of neither. `failure`
+    /// is bounded and flattened: a daemon's own error text is not this crate's
+    /// to trust, and one newline is all it takes to forge an extra audit line.
+    pub fn finish(self, failure: Option<&str>) {
+        let Some(label) = self.label else {
+            return;
+        };
         let millis = self.started.elapsed().as_millis();
         let service = self.service;
-        match error {
-            None => eprintln!("{service}: audit: ok {} ({millis}ms)", self.label),
-            Some(failure) => eprintln!(
-                "{service}: audit: failed {} ({millis}ms): status={} {}",
-                self.label,
-                failure.status,
-                bound(&failure.body)
+        match failure {
+            None => eprintln!("{service}: audit: ok {label} ({millis}ms)"),
+            Some(reason) => eprintln!(
+                "{service}: audit: failed {label} ({millis}ms): {}",
+                bound(reason)
             ),
         }
     }
 }
 
-/// `<api path> action=<id> by=<caller>` — the operation, the policy it was
-/// gated by, and who asked for it.
+/// `<call> action=<id> by=<caller>` — the operation, the policy it was gated
+/// by, and who asked for it.
 ///
-/// The API path rather than the contract's internal method name: it is what the
-/// client sent and what an operator greps for.
+/// The call's own rendered name rather than anything this crate invented: it is
+/// what the contract calls the method and what an operator greps for.
 ///
 /// `by=` is always present, including when the caller could not be read
-/// ([`crate::Caller`]): a line that quietly loses it reads exactly like one
-/// written before the daemon recorded callers at all.
-fn describe(route: Route, action: &str, caller: &Caller) -> String {
-    format!("{} action={action} by={caller}", route.api_path)
+/// ([`Caller`]): a line that quietly loses it reads exactly like one written
+/// before the daemon recorded callers at all.
+fn describe(call: Call, action: &str, caller: &Caller) -> String {
+    format!("{call} action={action} by={caller}")
 }
 
-/// Bound and flatten a string the service produced.
+/// Bound and flatten a string the daemon produced.
 ///
-/// A service's error body is not this crate's to trust: it can be long, and it
+/// A daemon's error text is not this crate's to trust: it can be long, and it
 /// can contain a newline, which is all it takes to forge an extra audit line.
 fn bound(value: &str) -> String {
     value
@@ -108,43 +145,33 @@ fn bound(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{Operation, bound, describe};
+    use crate::call::Call;
     use crate::caller::Caller;
-    use crate::service::{Authorization, Route};
 
-    const GATED: Route = Route {
-        api_path: "/v1/thing/change",
-        object: "Thing",
-        method: "Change",
-        authorization: Authorization::Policy("org.example.thing.change"),
-    };
-
-    const OPEN: Route = Route {
-        api_path: "/v1/thing/read",
-        object: "Thing",
-        method: "Read",
-        authorization: Authorization::Unprivileged,
-    };
+    const GATED: Call = Call::gated("Thing", "Change", "org.example.thing.change");
+    const OPEN: Call = Call::unprivileged("Thing", "Read");
 
     /// Reads must produce no audit line at all: front-ends poll every few
     /// seconds, so logging them would evict the operations worth keeping.
     #[test]
-    fn only_state_changing_routes_are_audited() {
-        assert!(Operation::begin("exampled", OPEN, &Caller::InProcess).is_none());
+    fn only_state_changing_calls_are_audited() {
+        let quiet = Operation::begin("exampled", OPEN, &Caller::InProcess);
+        assert!(!quiet.is_audited());
+        quiet.finish(None);
+
         let audited = Operation::begin("exampled", GATED, &Caller::InProcess);
-        assert!(audited.is_some());
-        if let Some(operation) = audited {
-            operation.finish(None);
-        }
+        assert!(audited.is_audited());
+        audited.finish(None);
     }
 
-    /// The question the framework exists to keep answerable: one socket serves
+    /// The question this layer exists to keep answerable: one socket serves
     /// several front-ends under several accounts, and a line without `by=` says
     /// only that *someone* changed the host.
     #[test]
-    fn the_label_names_the_path_the_action_and_the_caller() {
+    fn the_label_names_the_call_the_action_and_the_caller() {
         assert_eq!(
             describe(GATED, "org.example.thing.change", &Caller::InProcess),
-            "/v1/thing/change action=org.example.thing.change by=in-process"
+            "Thing.Change action=org.example.thing.change by=in-process"
         );
     }
 
@@ -159,15 +186,15 @@ mod tests {
         );
         assert_eq!(
             label,
-            "/v1/thing/change action=org.example.thing.change \
+            "Thing.Change action=org.example.thing.change \
              by=unreadable (Socket operation on non-socket)"
         );
     }
 
-    /// A service's own error text is untrusted here for the same reason an
+    /// A daemon's own error text is untrusted here for the same reason an
     /// account name is: either can forge a journal line with one newline.
     #[test]
-    fn a_service_failure_cannot_forge_a_journal_line() {
+    fn a_failure_description_cannot_forge_a_journal_line() {
         let forged = bound(&format!("a\nexampled: audit: ok {}", "x".repeat(400)));
         assert!(!forged.contains('\n'));
         assert!(forged.chars().count() <= 256);

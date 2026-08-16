@@ -20,6 +20,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+# Read-only by default, at workflow scope so every job inherits it and a job
+# added later does not quietly start from the repository default. These jobs
+# build and run repository-controlled code -- the example runs its own self-test
+# -- and none of them writes anything back through the API.
+permissions:
+  contents: read
+
 jobs:
   prek:
     name: Prek
@@ -63,18 +70,15 @@ jobs:
         run: cargo build --locked --all-targets --verbose
       - name: Run tests
         run: cargo test --locked
-      - name: Check the example still serves
-        run: |
-          set -euo pipefail
-          socket="$(mktemp -u)"
-          cargo run --locked --example echo-service -- "$socket" &
-          example_pid=$!
-          trap 'kill "$example_pid" 2>/dev/null || true' EXIT
-          for _ in $(seq 1 100); do
-            [ -S "$socket" ] && break
-            sleep 0.2
-          done
-          curl --unix-socket "$socket" -sS --fail http://d/v1/status | tee /dev/stderr | grep -q '"healthy":true'
+      # The example drives itself: it binds, connects to its own socket from a
+      # thread, and exits non-zero if the exchange did not happen. This step
+      # used to speak HTTP with `curl`, which only worked because the crate
+      # owned a wire format — the thing it deliberately no longer does. The
+      # self-test keeps the guarantee that matters (the example actually runs,
+      # rather than merely compiling) without a protocol or a client on the
+      # runner.
+      - name: Check the example still runs
+        run: cargo run --locked --example gatekeeper -- --self-test
 
   miri:
     name: Miri
