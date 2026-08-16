@@ -1,0 +1,83 @@
+# Content policy and guards for this repository.
+#
+# One `[rule.<id>]` section per rule this repository declares for itself.
+# Everything else arrives from the bundled sets named below, which are re-read
+# from the binary on every run — a transcribed copy is a rule that has stopped
+# moving.
+
+# Who this repository belongs to, declared once for the whole policy.
+# `unowned-push` refuses to run without it rather than deriving an allow-list
+# from `origin`, which is tautological for the one remote most likely to be
+# wrong.
+owner = "HackingGate"
+
+[inherit]
+# Each set is named because taking it is a separate decision:
+#
+#   process-residue -- this crate's value is almost entirely in its comments:
+#                      which behaviour exists because of which failure, and what
+#                      breaks if it is "simplified". Those are the notes someone
+#                      reads while deciding whether to change a line, and
+#                      residue in them is read as part of the answer.
+#   credentials     -- a public repository is the one place a pasted token is
+#                      permanent, and this crate's subject is authorization, so
+#                      its examples and tests are full of things shaped like
+#                      real credentials.
+#   unmanaged-pins  -- there is a CI workflow and a hook config here, which is
+#                      where a version gets typed into a line no manifest holds.
+sets = ["process-residue", "credentials", "unmanaged-pins"]
+
+# ---------------------------------------------------------------------------
+# Guards -- what git is about to do.
+#
+# A content rule reads the tree and could run at any moment. A guard reads an
+# ACT: the message about to be recorded, the identity about to be stamped on
+# it, the range about to be pushed. Same `[rule.<id>]` section and the same one
+# id namespace, so `git.hooks` is the whole registration -- which stage a guard
+# fires at is decided here and not in .pre-commit-config.yaml.
+# ---------------------------------------------------------------------------
+
+[rule.prevent-ai-author]
+builtin = "prevent-ai-author"
+git.hooks = ["commit-msg"]
+
+[rule.prevent-unusual-unicode]
+builtin = "prevent-unusual-unicode"
+git.hooks = ["commit-msg"]
+
+# The trojan-source class in committed file content -- control, zero-width,
+# bidirectional override, private-use, and any space that is not U+0020
+# (CVE-2021-42574). Over every TRACKED file, not only the staged ones: a hidden
+# character checked on its way in and never again is invisible forever once it
+# arrives under --no-verify or through a merge.
+[rule.prevent-unusual-unicode-in-files]
+builtin = "prevent-unusual-unicode-in-files"
+git.hooks = ["pre-commit", "pre-merge-commit", "pre-push", "manual"]
+
+# Pinned rather than derived. Deriving the owner from `origin` is tautological
+# for the one remote most likely to be wrong: repointing origin also repoints
+# the allow-list.
+#
+# This repository is PUBLIC by design, so the guard is not here to keep code in.
+# It is here to keep pushes aimed at this account: a crate whose whole purpose
+# is to be adopted elsewhere is one whose remote gets edited.
+[rule.prevent-public-push]
+builtin = "prevent-public-push"
+owner = "HackingGate"
+git.hooks = ["pre-push"]
+
+[rule.no-local-merge]
+builtin = "no-local-merge"
+git.hooks = ["pre-merge-commit"]
+
+[rule.no-merge-commit]
+builtin = "no-merge-commit"
+git.hooks = ["pre-commit"]
+
+# Reads `git ls-remote --tags` for every pin in .pre-commit-config.yaml and
+# fails when one is behind. At `manual` rather than pre-push: at pre-push an
+# unrelated upstream patch release blocks the next push of work that has nothing
+# to do with it, which is how a gate gets bypassed by reflex.
+[rule.no-stale-hook-pins]
+builtin = "no-stale-hook-pins"
+git.hooks = ["manual"]

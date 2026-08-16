@@ -1,0 +1,74 @@
+[package]
+name = "uds-daemon"
+version = "0.1.0"
+edition = "2024"
+authors = ["HackingGate"]
+description = "Domain-agnostic HTTP/JSON over AF_UNIX daemon framework: socket lifecycle, SO_PEERCRED caller identity, authorization seam, audit and watchdog"
+repository = "https://github.com/HackingGate/uds-daemon"
+license = "Apache-2.0"
+readme = "README.md"
+rust-version = "1.97.1"
+keywords = ["unix-socket", "daemon", "systemd", "http", "linux"]
+categories = ["network-programming", "os::unix-apis"]
+
+[dependencies]
+# SO_PEERCRED, SO_RCVTIMEO and the NSS lookups, in a wrapper that needs no
+# `unsafe` here. See README.md for why this crate does not reach for the
+# private, Zig-backed bridge the same code used before it was extracted.
+nix = { version = "0.31", features = ["socket", "time", "user"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.26"
+
+[lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+unused_qualifications = "deny"
+unused_lifetimes = "deny"
+unused_import_braces = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+noop_method_call = "deny"
+single_use_lifetimes = "deny"
+absolute_paths_not_starting_with_crate = "deny"
+elided_lifetimes_in_paths = "deny"
+explicit_outlives_requirements = "deny"
+meta_variable_misuse = "deny"
+missing_abi = "deny"
+macro_use_extern_crate = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+todo = "deny"
+unimplemented = "deny"
+cast_possible_truncation = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"
+float_arithmetic = "deny"
+lossy_float_literal = "deny"
+shadow_unrelated = "deny"
+wildcard_imports = "deny"
+let_underscore_must_use = "deny"
+ptr_as_ptr = "deny"
+borrow_as_ptr = "deny"
+case_sensitive_file_extension_comparisons = "deny"
+str_to_string = "deny"
+string_add = "deny"
+format_push_string = "deny"
+inefficient_to_string = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+empty_structs_with_brackets = "deny"
+empty_drop = "deny"
+get_unwrap = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+same_name_method = "deny"
+tests_outside_test_module = "deny"
+undocumented_unsafe_blocks = "allow"

@@ -1,0 +1,95 @@
+default_install_hook_types:
+  - pre-commit
+  - pre-merge-commit
+  - pre-push
+  - commit-msg
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      # An explicit stage list, because the default is EVERY installed stage and
+      # commit-msg is one of them. A runner hands a commit-msg hook the message
+      # file with neither `files` nor `types` applied, so a YAML checker gets
+      # asked whether an English sentence parses as YAML.
+      - id: check-yaml
+        stages: [pre-commit, pre-merge-commit, pre-push, manual]
+      - id: check-toml
+        stages: [pre-commit, pre-merge-commit, pre-push, manual]
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo
+        args: [fmt, --check]
+        pass_filenames: false
+        files: \.rs$
+      - id: cargo-clippy
+        name: cargo clippy
+        language: system
+        entry: env
+        args: ["RUSTFLAGS=-D warnings", cargo, clippy, --all-targets]
+        pass_filenames: false
+        files: \.rs$
+      - id: cargo-test
+        name: cargo test
+        language: system
+        entry: env
+        args: ["RUSTFLAGS=-D warnings", cargo, test, --locked]
+        pass_filenames: false
+        files: \.rs$
+      - id: cargo-miri
+        name: cargo miri test
+        language: system
+        entry: env
+        args:
+          [
+            "MIRIFLAGS=-Zmiri-disable-isolation",
+            "RUSTFLAGS=-D warnings",
+            cargo,
+            +nightly,
+            miri,
+            test,
+          ]
+        pass_filenames: false
+        files: \.rs$
+      # The domain-freedom assertion, run as a check rather than left as a
+      # promise in the README. This crate exists to be retrofitted onto the
+      # daemon it was extracted from, and a single leaked identifier from
+      # either that daemon's problem domain or this workspace's other one is
+      # enough to make the retrofit impossible — quietly, at review time,
+      # months later.
+      - id: no-domain-knowledge
+        name: the framework knows nothing about what it serves
+        language: system
+        entry: sh
+        args:
+          - -c
+          - |
+            leaked="$(grep -rinE 'vfio|libvirt|route.?config|network' src/ || true)"
+            [ -z "$leaked" ] || {
+              echo "domain knowledge leaked into src/:"
+              echo "$leaked"
+              exit 1
+            }
+        pass_filenames: false
+        files: ^src/.*\.rs$
+
+  # The content policy, the guards and the declaration check. Every id is a
+  # stage, and which rules have something to say at that stage is decided by
+  # policy/principles.toml rather than here.
+  - repo: https://github.com/HackingGate/uphold
+    rev: v1.2.0
+    hooks:
+      - id: uphold-scan
+      - id: uphold-scan-text
+      - id: uphold-guard
+      - id: uphold-guard-commit-msg
+      - id: uphold-guard-merge
+      - id: uphold-guard-push
+      - id: uphold-guard-manual

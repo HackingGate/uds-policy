@@ -1,0 +1,7 @@
+# Panicking is how a test reports a failed assertion, so the panic bans in
+# Cargo.toml `[lints.clippy]` apply to shipping code only. Without this, every
+# `expect("...")` and `json["key"]` in a test is an error.
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

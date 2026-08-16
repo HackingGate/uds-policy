@@ -1,0 +1,67 @@
+# toolchain.toml — host/build-toolchain manifest for uds-daemon.
+#
+# Declares the NON-language host toolchain needed to build and test this repo:
+# the part cargo cannot install for itself. Language dependencies (Cargo.toml
+# crates) are cargo's job and out of scope.
+#
+# The list is short on purpose. This crate is public, has no private
+# dependencies, no native bridge and no build script, so "what a stranger needs
+# in order to build it" is a stock Rust toolchain — plus nightly for Miri and
+# curl for the one CI step that drives the example over a real socket.
+
+[meta]
+name = "uds-daemon"
+description = "Rust host toolchain: rustup toolchain (>= MSRV), rustfmt, clippy, and nightly Miri"
+
+# rustup manages the toolchain; a fresh box ships it with NO default toolchain.
+[[tool]]
+name = "rustup"
+check = "rustup --version"
+version = "rustup --version"
+packages.arch = "rustup"
+packages.debian = "rustup"
+hint = "the rustup toolchain multiplexer; the default toolchain is set by the rust-toolchain setup step"
+
+# The compiler must satisfy the repo MSRV, which is declared once in Cargo.toml
+# (`rust-version`) and is not restated here — a restated version has to be
+# updated in two places, and a stale copy cannot be told from a deliberate one.
+[[tool]]
+name = "rustc"
+check = "rustc --version"
+version = "rustc --version"
+hint = "no default toolchain? run: rustup default stable. The required version is Cargo.toml `rust-version`."
+
+[[tool]]
+name = "rustfmt"
+check = "cargo fmt --version"
+hint = "component; run: rustup component add rustfmt"
+
+[[tool]]
+name = "clippy"
+check = "cargo clippy --version"
+hint = "component; run: rustup component add clippy"
+
+# Miri needs nightly. Most of this crate's tests are `cfg_attr(miri, ignore)`d
+# because Miri cannot execute unix sockets; what remains is the parsing and
+# arithmetic, where a finding would be a real one.
+[[tool]]
+name = "miri"
+check = "cargo +nightly miri --version"
+hint = "run: rustup toolchain install nightly --component miri rust-src"
+
+# The pre-commit hooks in .pre-commit-config.yaml. Either runner consumes the
+# same file; prek is the faster one and is what CI uses.
+[[tool]]
+name = "prek"
+check = "prek --version"
+packages.arch = "prek"
+hint = "run: cargo install prek  (or use pre-commit, which reads the same config)"
+
+# Only for driving the example over its socket, which is how the README's
+# quickstart and the CI smoke step are kept honest.
+[[tool]]
+name = "curl"
+check = "curl --version"
+packages.arch = "curl"
+packages.debian = "curl"
+hint = "used by the example's quickstart and the CI smoke step"
