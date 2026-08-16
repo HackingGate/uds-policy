@@ -1,4 +1,4 @@
-# toolchain.toml — host/build-toolchain manifest for uds-daemon.
+# toolchain.toml — host/build-toolchain manifest for uds-policy.
 #
 # Declares the NON-language host toolchain needed to build and test this repo:
 # the part cargo cannot install for itself. Language dependencies (Cargo.toml
@@ -6,11 +6,13 @@
 #
 # The list is short on purpose. This crate is public, has no private
 # dependencies, no native bridge and no build script, so "what a stranger needs
-# in order to build it" is a stock Rust toolchain — plus nightly for Miri and
-# curl for the one CI step that drives the example over a real socket.
+# in order to build it" is a stock Rust toolchain — plus nightly for Miri. It
+# used to need `curl` as well, for a CI step that spoke HTTP to the example;
+# the crate no longer owns a wire format, so the example drives itself and the
+# tool went with it.
 
 [meta]
-name = "uds-daemon"
+name = "uds-policy"
 description = "Rust host toolchain: rustup toolchain (>= MSRV), rustfmt, clippy, and nightly Miri"
 
 # rustup manages the toolchain; a fresh box ships it with NO default toolchain.
@@ -56,12 +58,3 @@ name = "prek"
 check = "prek --version"
 packages.arch = "prek"
 hint = "run: cargo install prek  (or use pre-commit, which reads the same config)"
-
-# Only for driving the example over its socket, which is how the README's
-# quickstart and the CI smoke step are kept honest.
-[[tool]]
-name = "curl"
-check = "curl --version"
-packages.arch = "curl"
-packages.debian = "curl"
-hint = "used by the example's quickstart and the CI smoke step"

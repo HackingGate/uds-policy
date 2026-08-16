@@ -54,6 +54,61 @@ git.hooks = ["commit-msg"]
 builtin = "prevent-unusual-unicode-in-files"
 git.hooks = ["pre-commit", "pre-merge-commit", "pre-push", "manual"]
 
+# ---------------------------------------------------------------------------
+# The `no-private-repo-names` family.
+#
+# Absent until it was needed, which is the only way this kind of absence is ever
+# noticed. This repository was extracted FROM a private one and is tracked BY a
+# private issue, so every change here has a reason to cite a name that must not
+# travel with it -- and the first change after the extraction did exactly that,
+# putting a private organisation and repository into a commit message on a
+# public branch. Nothing refused it, because nothing had been asked to.
+#
+# Every sibling repository in this workspace declares this family, including the
+# public one that ships it. This one did not, and "public repository, so there
+# is nothing to keep in" was the reasoning that skipped it. That reasoning has
+# the direction backwards: a public repository is not the place with nothing to
+# protect, it is the place where a leak is permanent.
+# ---------------------------------------------------------------------------
+
+[rule.no-private-repo-names]
+builtin = "no-private-repo-names"
+# Declared rather than looked up: a lookup makes every commit wait on a forge to
+# be told something this line already knows, and the answer is a decision rather
+# than a reading.
+#
+# The declaration is the whole scope test. A rule that believes its repository
+# is private refuses nothing, silently, and reports a clean tree while doing it
+# -- so this line is not a stale comment after a visibility change, it is the
+# guard switched off. Flipping this repository means editing this line in the
+# same change, after `uphold audit --for-publication`.
+visibility = "public"
+# Read from OUTSIDE the repository, which is the entire reason the field exists:
+# a list of names that must not be published cannot live in a file that is
+# published. The rule stays committed and reviewable; the names do not travel
+# with it. A missing file is an error rather than an empty list, because a rule
+# with no owners refuses nothing and would report a clean tree.
+private_owners_from = "cat ${XDG_CONFIG_HOME:-$HOME/.config}/principles/private-owners"
+git.hooks = ["commit-msg"]
+
+[rule.no-private-repo-names-staged]
+builtin = "no-private-repo-names-staged"
+# Written again rather than inherited from the rule above: each variant carries
+# its own scope, so one left at `private` is one seam standing down while its
+# siblings refuse.
+visibility = "public"
+git.hooks = ["pre-commit"]
+
+[rule.no-private-repo-names-in-files]
+builtin = "no-private-repo-names-in-files"
+visibility = "public"
+# Not pre-commit: this asks about every distinct name anywhere in the tree
+# rather than the few a commit touches, and a check that adds twenty seconds to
+# every commit is one somebody deletes. At pre-push it also reads the commit
+# messages the push publishes, which is the only seam that can reach a message
+# written under --no-verify.
+git.hooks = ["pre-merge-commit", "pre-push", "manual"]
+
 # Pinned rather than derived. Deriving the owner from `origin` is tautological
 # for the one remote most likely to be wrong: repointing origin also repoints
 # the allow-list.
@@ -81,3 +136,73 @@ git.hooks = ["pre-commit"]
 [rule.no-stale-hook-pins]
 builtin = "no-stale-hook-pins"
 git.hooks = ["manual"]
+
+# ---------------------------------------------------------------------------
+# Checkers and shims -- what a command is about to publish.
+#
+# A git hook cannot see a pull-request body. `gh pr create` hands text straight
+# to a public API without passing a single seam, and that is exactly how the
+# private organisation this crate was extracted from reached this repository's
+# pull request while every git-side guard was green.
+#
+# The checker contract: the subject on stdin, its kind in UPHOLD_KIND, 0 to
+# pass, 1 to refuse, 2 to say it could not look. Both of these are the binary
+# consulting itself, which is the point -- the rule that judges a commit message
+# and the rule that judges a pull-request body are the SAME rule, and a second
+# implementation of it would agree until it did not.
+# ---------------------------------------------------------------------------
+
+[rule.no-published-markers]
+message = """
+A pull-request body, an issue comment and a branch name all reach a public API
+without passing a git hook. This crate is tracked by a private issue, so a
+reference that is correct in the tracker is a disclosure here.
+"""
+exec = "uphold guard --text -"
+# `git push` belongs here as much as `gh` does. A branch name goes onto a public
+# forge in the ref list, in the pull request it suggests and in every
+# notification; pre-push is handed the refs, but the guards that read them judge
+# the DESTINATION and never the name.
+command.before = ["gh", "git push"]
+
+[rule.no-published-host-identity]
+message = """
+Use neutral placeholders -- example-user, example-host, example.test -- instead
+of values read off the machine you are standing on.
+"""
+exec = "uphold scan --text -"
+command.before = ["gh", "git push"]
+
+# Subcommands are NAMED rather than pattern-matched. A shim that guesses which
+# ones carry text is one release away from either missing a new one in silence
+# or blocking one that never carried any, and only the first failure is visible.
+[[shim]]
+command = "gh"
+match = [
+  "pr:create", "pr:edit", "pr:comment", "pr:review",
+  "issue:create", "issue:edit", "issue:comment",
+  "release:create", "release:edit",
+]
+text_flags = ["-t", "--title", "-b", "--body", "-n", "--notes", "-d", "--description"]
+file_flags = ["-F", "--body-file", "--notes-file"]
+target_flags = ["-R", "--repo"]
+# --fill takes the body from commit messages, which commit-msg already guarded
+# on the way in. Checking it again would refuse text that is already published
+# and cannot be edited, which teaches the wrong lesson about the guard.
+skip_flags = ["--fill", "--fill-first", "--fill-verbose"]
+web_flags = ["-w", "--web"]
+editor_env = "GH_EDITOR"
+target = "forge-repo"
+scope = "public-target"
+
+# git publishes text no git hook is in a position to read. A branch name goes
+# onto a public forge in the ref list, in the pull request it suggests and in
+# every notification; pre-push is handed the refs, but the guards that read them
+# judge the DESTINATION and never the name. Its text is positional, so it needs
+# its own collector rather than a fork of the shim above.
+[[shim]]
+command = "git"
+match = ["push:*"]
+target = "git-remote"
+scope = "public-target"
+collect = "git-refs"

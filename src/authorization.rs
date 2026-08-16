@@ -1,35 +1,33 @@
-//! The gate between a resolved route and the code that runs it.
+//! The gate between a named call and the code that runs it.
 //!
-//! The framework consults the [`Authorizer`] for **every** resolved route, not
-//! only the gated ones, and it hands over the [`Caller`] the kernel reported.
-//! Both of those are deliberate:
+//! A daemon consults the [`Authorizer`] for **every** call, not only the gated
+//! ones, and hands over the [`Caller`] the kernel reported. Both of those are
+//! deliberate:
 //!
 //! * Passing the caller is what makes a uid/gid gate expressible at all. An
-//!   authorizer that receives only the route can decide whether a *kind* of
-//!   call is allowed and never whether *this* party may make it, which leaves
-//!   the socket's file mode as the only identity check the daemon has.
-//! * Consulting it for unprivileged routes too means a daemon can refuse an
+//!   authorizer that receives only the call can decide whether a *kind* of call
+//!   is allowed and never whether *this party* may make it, which leaves the
+//!   socket's file mode as the only identity check the daemon has.
+//! * Consulting it for unprivileged calls too means a daemon can refuse an
 //!   unknown peer outright rather than serving reads to it. An authorizer that
 //!   wants the narrower behaviour writes one arm:
 //!   `Authorization::Unprivileged => Ok(())`, which is exactly what
 //!   [`AllowSocketPeers`] is.
 //!
-//! Health and version are answered by the framework and never reach an
-//! authorizer: a liveness probe that has to be authorized is a liveness probe
-//! that reports the authorizer's health.
+//! A liveness probe should never reach an authorizer: a probe that has to be
+//! authorized is a probe that reports the authorizer's health. Answering one is
+//! the daemon's own business now — this crate has no request pipeline to answer
+//! it from — but the rule survives the move and is worth restating here.
 
+use crate::call::{Authorization, Call};
 use crate::caller::Caller;
-use crate::service::{Authorization, Route};
 use std::collections::BTreeSet;
 
 /// Why a call was refused.
 ///
-/// A string, because the framework does not classify refusals — it passes the
-/// reason to [`Service::encode_framework_error`] with
-/// [`FrameworkErrorKind::Unauthorized`] and lets the service phrase the reply.
-///
-/// [`Service::encode_framework_error`]: crate::Service::encode_framework_error
-/// [`FrameworkErrorKind::Unauthorized`]: crate::FrameworkErrorKind::Unauthorized
+/// A string, because this crate does not classify refusals. The daemon decides
+/// how a refusal is reported on whatever wire it speaks, and the reason is what
+/// it has to say.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Denial {
     /// Operator-facing explanation. Reaches the client, so it must not carry
@@ -47,11 +45,12 @@ impl Denial {
 
 /// Decides whether a caller may make a call.
 pub trait Authorizer: core::fmt::Debug + Send + Sync {
-    /// Allow or refuse `route` for `caller`.
+    /// Allow or refuse `call` for `caller`.
     ///
-    /// Called after the route resolved and before the request body is parsed,
-    /// so a refusal costs nothing and reveals nothing about the payload.
-    fn authorize(&self, route: Route, caller: &Caller) -> Result<(), Denial>;
+    /// Meant to be consulted after the call is named and *before* its arguments
+    /// are parsed, so a refusal costs nothing and reveals nothing about the
+    /// payload.
+    fn authorize(&self, call: Call, caller: &Caller) -> Result<(), Denial>;
 }
 
 /// Reaching the socket is the whole gate.
@@ -65,7 +64,7 @@ pub trait Authorizer: core::fmt::Debug + Send + Sync {
 pub struct AllowSocketPeers;
 
 impl Authorizer for AllowSocketPeers {
-    fn authorize(&self, _route: Route, _caller: &Caller) -> Result<(), Denial> {
+    fn authorize(&self, _call: Call, _caller: &Caller) -> Result<(), Denial> {
         Ok(())
     }
 }
@@ -79,16 +78,14 @@ impl Authorizer for AllowSocketPeers {
 pub struct DenyAll;
 
 impl Authorizer for DenyAll {
-    fn authorize(&self, route: Route, _caller: &Caller) -> Result<(), Denial> {
-        Denial::new(match route.authorization {
-            Authorization::Policy(action) => format!(
-                "authorization required for {action} before {}.{}",
-                route.object, route.method
-            ),
-            Authorization::Unprivileged => format!(
-                "this daemon is not accepting calls: {}.{}",
-                route.object, route.method
-            ),
+    fn authorize(&self, call: Call, _caller: &Caller) -> Result<(), Denial> {
+        Denial::new(match call.authorization {
+            Authorization::Policy(action) => {
+                format!("authorization required for {action} before {call}")
+            }
+            Authorization::Unprivileged => {
+                format!("this daemon is not accepting calls: {call}")
+            }
         })
         .into_result()
     }
@@ -116,6 +113,12 @@ impl Denial {
 /// attribute is one it cannot audit — but a daemon that would rather stay
 /// reachable than stay attributable can set it to `false` and take the
 /// `unreadable (…)` line instead.
+///
+/// **This gate matches only the caller's primary gid**, because that is the one
+/// gid `SO_PEERCRED` carries. A deployment whose policy is "a member of group
+/// *g*, including as a supplementary group" needs its own `Authorizer` that
+/// resolves the membership through NSS; that is a policy this crate has no way
+/// to guess and no business hard-coding.
 #[derive(Debug, Clone, Default)]
 pub struct PeerGate {
     /// User ids that may call.
@@ -153,15 +156,14 @@ impl PeerGate {
 }
 
 impl Authorizer for PeerGate {
-    fn authorize(&self, route: Route, caller: &Caller) -> Result<(), Denial> {
+    fn authorize(&self, call: Call, caller: &Caller) -> Result<(), Denial> {
         match *caller {
             Caller::Peer { uid, gid, .. } => {
                 if self.allowed_uids.contains(&uid) || self.allowed_gids.contains(&gid) {
                     return Ok(());
                 }
                 Err(Denial::new(format!(
-                    "uid {uid} gid {gid} may not call {}.{}",
-                    route.object, route.method
+                    "uid {uid} gid {gid} may not call {call}"
                 )))
             }
             // In-process dispatch is not a socket peer and never was gated by
@@ -185,22 +187,11 @@ impl Authorizer for PeerGate {
 #[cfg(test)]
 mod tests {
     use super::{AllowSocketPeers, Authorizer, DenyAll, PeerGate};
+    use crate::call::Call;
     use crate::caller::Caller;
-    use crate::service::{Authorization, Route};
 
-    const GATED: Route = Route {
-        api_path: "/v1/thing/change",
-        object: "Thing",
-        method: "Change",
-        authorization: Authorization::Policy("org.example.thing.change"),
-    };
-
-    const OPEN: Route = Route {
-        api_path: "/v1/thing/read",
-        object: "Thing",
-        method: "Read",
-        authorization: Authorization::Unprivileged,
-    };
+    const GATED: Call = Call::gated("Thing", "Change", "org.example.thing.change");
+    const OPEN: Call = Call::unprivileged("Thing", "Read");
 
     fn peer(uid: u32, gid: u32) -> Caller {
         Caller::Peer { pid: 7, uid, gid }
@@ -218,7 +209,7 @@ mod tests {
     fn deny_all_names_the_action_it_would_have_needed() {
         let denial = DenyAll
             .authorize(GATED, &peer(1000, 1000))
-            .expect_err("DenyAll allowed a gated route");
+            .expect_err("DenyAll allowed a gated call");
         assert!(
             denial.reason.contains("org.example.thing.change"),
             "the refusal did not name the action: {}",
@@ -260,5 +251,15 @@ mod tests {
             ..PeerGate::for_uids([1000])
         };
         assert!(lenient.authorize(GATED, &unreadable).is_ok());
+    }
+
+    /// The refusal names the call in the contract's own words, so a denial line
+    /// and an audit line can be read side by side.
+    #[test]
+    fn a_refusal_names_the_call() {
+        let denial = PeerGate::for_uids([1000])
+            .authorize(GATED, &peer(1001, 4))
+            .expect_err("an unlisted uid was admitted");
+        assert!(denial.reason.contains("Thing.Change"), "{}", denial.reason);
     }
 }
