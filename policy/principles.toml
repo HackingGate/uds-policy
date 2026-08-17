@@ -11,6 +11,23 @@
 # wrong.
 owner = "HackingGate"
 
+# This repository is PUBLIC, and saying so is what arms the three `private-names`
+# guards rather than standing them down. Declared rather than looked up: a forge
+# answers `unknown` with no token, and otherwise answers about the visibility
+# this repository has TODAY, which is the one thing that changes on the day the
+# answer matters. The set refuses to load without this line for that reason.
+visibility = "public"
+
+# Read from OUTSIDE the repository, which matters more here than in a private
+# tree: this policy is world-readable, so a literal list of the owners it exists
+# to protect would be the disclosure the rule refuses. Top-level rather than on a
+# rule, because a rule arriving from a bundled set cannot be handed a parameter.
+# The set deliberately does not ship the command: a bundled set carrying a shell
+# line would run it in every inheriting repository on a version bump. A missing
+# source is an error rather than an empty list, because a rule with no owners
+# refuses nothing and would report a clean tree.
+private_owners_from = "cat ${XDG_CONFIG_HOME:-$HOME/.config}/principles/private-owners"
+
 [inherit]
 # Each set is named because taking it is a separate decision:
 #
@@ -25,7 +42,7 @@ owner = "HackingGate"
 #                      real credentials.
 #   unmanaged-pins  -- there is a CI workflow and a hook config here, which is
 #                      where a version gets typed into a line no manifest holds.
-sets = ["process-residue", "credentials", "unmanaged-pins"]
+sets = ["process-residue", "credentials", "unmanaged-pins", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "stale-pins", "unowned-push"]
 
 # ---------------------------------------------------------------------------
 # Guards -- what git is about to do.
@@ -37,77 +54,11 @@ sets = ["process-residue", "credentials", "unmanaged-pins"]
 # fires at is decided here and not in .pre-commit-config.yaml.
 # ---------------------------------------------------------------------------
 
-[rule.prevent-ai-author]
-builtin = "prevent-ai-author"
-git.hooks = ["commit-msg"]
-
-[rule.prevent-unusual-unicode]
-builtin = "prevent-unusual-unicode"
-git.hooks = ["commit-msg"]
-
-# The trojan-source class in committed file content -- control, zero-width,
-# bidirectional override, private-use, and any space that is not U+0020
-# (CVE-2021-42574). Over every TRACKED file, not only the staged ones: a hidden
-# character checked on its way in and never again is invisible forever once it
-# arrives under --no-verify or through a merge.
-[rule.prevent-unusual-unicode-in-files]
-builtin = "prevent-unusual-unicode-in-files"
-git.hooks = ["pre-commit", "pre-merge-commit", "pre-push", "manual"]
-
-# ---------------------------------------------------------------------------
-# The `no-private-repo-names` family.
-#
-# Absent until it was needed, which is the only way this kind of absence is ever
-# noticed. This repository was extracted FROM a private one and is tracked BY a
-# private issue, so every change here has a reason to cite a name that must not
-# travel with it -- and the first change after the extraction did exactly that,
-# putting a private organisation and repository into a commit message on a
-# public branch. Nothing refused it, because nothing had been asked to.
-#
-# Every sibling repository in this workspace declares this family, including the
-# public one that ships it. This one did not, and "public repository, so there
-# is nothing to keep in" was the reasoning that skipped it. That reasoning has
-# the direction backwards: a public repository is not the place with nothing to
-# protect, it is the place where a leak is permanent.
-# ---------------------------------------------------------------------------
-
-[rule.no-private-repo-names]
-builtin = "no-private-repo-names"
-# Declared rather than looked up: a lookup makes every commit wait on a forge to
-# be told something this line already knows, and the answer is a decision rather
-# than a reading.
-#
-# The declaration is the whole scope test. A rule that believes its repository
-# is private refuses nothing, silently, and reports a clean tree while doing it
-# -- so this line is not a stale comment after a visibility change, it is the
-# guard switched off. Flipping this repository means editing this line in the
-# same change, after `uphold audit --for-publication`.
-visibility = "public"
-# Read from OUTSIDE the repository, which is the entire reason the field exists:
-# a list of names that must not be published cannot live in a file that is
-# published. The rule stays committed and reviewable; the names do not travel
-# with it. A missing file is an error rather than an empty list, because a rule
-# with no owners refuses nothing and would report a clean tree.
-private_owners_from = "cat ${XDG_CONFIG_HOME:-$HOME/.config}/principles/private-owners"
-git.hooks = ["commit-msg"]
-
-[rule.no-private-repo-names-staged]
-builtin = "no-private-repo-names-staged"
-# Written again rather than inherited from the rule above: each variant carries
-# its own scope, so one left at `private` is one seam standing down while its
-# siblings refuse.
-visibility = "public"
-git.hooks = ["pre-commit"]
-
-[rule.no-private-repo-names-in-files]
-builtin = "no-private-repo-names-in-files"
-visibility = "public"
-# Not pre-commit: this asks about every distinct name anywhere in the tree
-# rather than the few a commit touches, and a check that adds twenty seconds to
-# every commit is one somebody deletes. At pre-push it also reads the commit
-# messages the push publishes, which is the only seam that can reach a message
-# written under --no-verify.
-git.hooks = ["pre-merge-commit", "pre-push", "manual"]
+# The three private-name guards are inherited from `private-names` and are not
+# written out here. The copies that stood in this place matched the set rule for
+# rule and hook for hook -- commit-msg, the staged diff, the tracked tree -- and
+# their `visibility` and owner source are declared at the top of this file, which
+# is the only place a rule arriving from a set can read them from.
 
 # Pinned rather than derived. Deriving the owner from `origin` is tautological
 # for the one remote most likely to be wrong: repointing origin also repoints
@@ -116,23 +67,14 @@ git.hooks = ["pre-merge-commit", "pre-push", "manual"]
 # This repository is PUBLIC by design, so the guard is not here to keep code in.
 # It is here to keep pushes aimed at this account: a crate whose whole purpose
 # is to be adopted elsewhere is one whose remote gets edited.
-[rule.prevent-public-push]
-builtin = "prevent-public-push"
-owner = "HackingGate"
-git.hooks = ["pre-push"]
+# `prevent-public-push` is inherited from `unowned-push` and is not written out
+# here. The copy said `builtin`, `git.hooks = ["pre-push"]` and an `owner` the
+# top of this file already declares -- nothing the set does not say.
 
-[rule.no-local-merge]
-builtin = "no-local-merge"
-git.hooks = ["pre-merge-commit"]
-
-[rule.no-merge-commit]
-builtin = "no-merge-commit"
-git.hooks = ["pre-commit"]
-
-# Reads `git ls-remote --tags` for every pin in .pre-commit-config.yaml and
-# fails when one is behind. At `manual` rather than pre-push: at pre-push an
-# unrelated upstream patch release blocks the next push of work that has nothing
-# to do with it, which is how a gate gets bypassed by reflex.
+# Inherited from `stale-pins` and deliberately overridden: the set ships
+# `pre-push` as well as `manual`, and this repository runs it at `manual` only
+# so an unrelated upstream patch release cannot block an unrelated push. An own
+# rule of the same id replaces the inherited one whole.
 [rule.no-stale-hook-pins]
 builtin = "no-stale-hook-pins"
 git.hooks = ["manual"]
