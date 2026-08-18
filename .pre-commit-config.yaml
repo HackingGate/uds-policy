@@ -100,7 +100,7 @@ repos:
   # stage, and which rules have something to say at that stage is decided by
   # policy/principles.toml rather than here.
   - repo: https://github.com/HackingGate/uphold
-    rev: v1.4.0
+    rev: v1.4.1
     hooks:
       - id: uphold-scan
       - id: uphold-scan-text
