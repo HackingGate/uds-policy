@@ -1,0 +1,102 @@
+# mise.toml -- the version of every host tool this crate needs that cargo does
+# not install for itself.
+#
+# WHAT THIS REPLACED. A hand-written `toolchain.toml` sat here declaring six
+# rows -- rustup, rustc, rustfmt, clippy, miri, prek -- in a schema invented for
+# this fleet, with a `check` command and an install `hint` per row. Two things
+# were wrong with it, and only the second is about duplication:
+#
+#   1. NOTHING READ IT. There is no scripts/deps.sh in this repository, no CI
+#      step that parses it and no hook that runs it. Every claim in it was
+#      prose, and prose that names a version goes stale without anything
+#      failing. A manifest with no reader is a document that looks like a guard.
+#   2. Its five rustup rows restated what .github/workflows/ci.yml already
+#      declares to the actions that do the installing, and its sixth row said
+#      "run: cargo install prek" -- a from-source build of a tool that ships
+#      prebuilt binaries for both architectures this crate is developed on.
+#
+# So the split now is the one a sibling workspace arrived at independently:
+#
+#   [tools]   WHICH VERSION of a tool, resolved for this arch and OS, by a
+#             version manager that already knows how -- not by a `hint`.
+#   [tasks]   the two host facts mise does not own, expressed as commands that
+#             can be RUN rather than as rows that could only be read.
+#
+# RUST IS DELIBERATELY NOT IN [tools]. mise can install a Rust toolchain, but
+# rustup is what this crate actually needs: `cargo +nightly miri test` names a
+# rustup toolchain by name, the components (rustfmt, clippy, miri, rust-src)
+# are rustup's vocabulary, and CI installs them through dtolnay/rust-toolchain.
+# Moving Rust here would leave three things claiming to own the toolchain and
+# would still have to shell out to rustup for the components. The `setup` task
+# below drives rustup directly, which is the honest arrangement.
+
+[tools]
+# The pre-commit runner .pre-commit-config.yaml is written for. It is the ONLY
+# tool in this repository that had no way to arrive: the old row's answer was
+# `cargo install prek`, which compiles it, and CI's answer is
+# j178/prek-action@v2, which downloads it -- so a contributor's machine and the
+# runner were getting the tool by two different routes and could disagree about
+# its version with nothing to say so.
+#
+# `latest` rather than a pin, because nothing here pins it either: the action
+# tracks its own releases, and a pinned patch would be a version a dependency
+# bot cannot see. The hook revisions in .pre-commit-config.yaml are the pins
+# that matter, and `no-stale-hook-pins` in policy/principles.toml watches those.
+prek = "latest"
+
+# ---------------------------------------------------------------------------
+# What mise cannot provision, as tasks rather than as unread rows.
+# ---------------------------------------------------------------------------
+
+# Ensure a default rustup toolchain exists and carries what the hooks invoke.
+# A fresh box ships rustup with NO default toolchain, so `rustc --version`
+# fails on a machine where rustup is perfectly installed -- the failure the old
+# manifest's `hint` described and could not fix.
+#
+# The MSRV is not restated here. It is declared once, in Cargo.toml
+# `rust-version`, and a copy of it in a second file cannot be told from a
+# deliberate divergence.
+[tasks.setup]
+description = "install the rustup toolchains this crate builds and tests with"
+run = """
+set -eu
+rustup show active-toolchain >/dev/null 2>&1 || rustup default stable
+rustup component add rustfmt clippy
+rustup toolchain install nightly --component miri rust-src
+"""
+
+# The verifier, kept separate from `setup` on purpose: a provisioner must not be
+# the thing that grades its own work. `setup` reports rustup's exit code, which
+# says a command ran, not that the host can now build -- and every arrangement
+# in this fleet that let one program do both has at some point called a broken
+# host ready.
+[tasks.doctor]
+description = "check this host can build, lint and Miri-test the crate"
+run = """
+set -eu
+fail=0
+# NAME:COMMAND pairs rather than bare commands. Four of the six probes start
+# with the word `cargo`, so deriving the label from the command printed the
+# same name three times and a reader could not tell which one was missing.
+for probe in \\
+  "rustup:rustup --version" \\
+  "rustc:rustc --version" \\
+  "rustfmt:cargo fmt --version" \\
+  "clippy:cargo clippy --version" \\
+  "miri:cargo +nightly miri --version" \\
+  "prek:prek --version"; do
+  name="${probe%%:*}"
+  cmd="${probe#*:}"
+  if out="$(sh -c "$cmd" 2>&1)"; then
+    printf '  ok       %-10s %s\\n' "$name" "$(printf '%s' "$out" | head -1)"
+  else
+    printf '  MISSING  %-10s (%s)\\n' "$name" "$cmd"
+    fail=1
+  fi
+done
+[ "$fail" -eq 0 ] || {
+  echo
+  echo "run: mise install && mise run setup"
+  exit 1
+}
+"""

@@ -203,6 +203,16 @@ which would be enough:
 
 ## Building
 
+A stock Rust toolchain plus nightly Miri, and `prek` to run the hooks.
+[mise](https://github.com/jdx/mise) declares them in `mise.toml` and installs
+them; it is not a requirement, only the shortest route:
+
+```console
+mise install      # prek, at the version mise.toml declares
+mise run setup    # rustup default toolchain, its components, nightly + miri
+mise run doctor   # verify, separately from having installed
+```
+
 ```console
 cargo build --locked
 cargo test --locked
