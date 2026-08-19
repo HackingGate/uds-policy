@@ -28,6 +28,27 @@ visibility = "public"
 # refuses nothing and would report a clean tree.
 private_owners_from = "cat ${XDG_CONFIG_HOME:-$HOME/.config}/principles/private-owners"
 
+# …and the line that lets the line above survive leaving the machine it was
+# written on. The source it names is one operator's file: absent in every clone,
+# and absent on a CI runner. The default just above turns that absence into exit
+# 2, which is what it did — the Prek job refused every push over a file that
+# exists nowhere but the author's laptop, while Miri, the tests and MSRV passed
+# beside it.
+#
+# The two obvious repairs are both worse. Dropping `private_owners_from`
+# surrenders the forms that only a DECLARED owner list can see: a bare
+# `otherowner/repo`, indistinguishable from a relative path without one, and an
+# organisation named on its own. Those are precisely the shapes a world-readable
+# repository leaks. Appending `|| true` to the command buys the same green while
+# losing them in silence, everywhere, permanently.
+#
+# This is the third answer: the missing source is reported on stderr, naming
+# what is no longer being checked, and the run proceeds. Where the file IS
+# present — the machine this policy is authored on — nothing changes and every
+# form is still refused. Setting this with no `private_owners_from` anywhere is
+# refused at load, so the exemption cannot outlive the source it excuses.
+private_owners_optional = true
+
 [inherit]
 # Each set is named because taking it is a separate decision:
 #
