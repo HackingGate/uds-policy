@@ -63,7 +63,16 @@ private_owners_optional = true
 #                      real credentials.
 #   unmanaged-pins  -- there is a CI workflow and a hook config here, which is
 #                      where a version gets typed into a line no manifest holds.
-sets = ["process-residue", "credentials", "unmanaged-pins", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "stale-pins", "unowned-push"]
+#   hand-rolled-toolchain
+#                   -- taken with nothing here for it to refuse, which is the
+#                      point of taking it now rather than later. This tree
+#                      declares its host tools in mise.toml and installs none of
+#                      them by hand, so the set is armed against the NEXT
+#                      hand-written installer rather than being adopted after
+#                      one has already been written. A set inherited while it
+#                      still has findings is one somebody argues with; a set
+#                      inherited while the tree is clean is one nobody has to.
+sets = ["process-residue", "credentials", "unmanaged-pins", "hand-rolled-toolchain", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "stale-pins", "unowned-push"]
 
 # ---------------------------------------------------------------------------
 # Guards -- what git is about to do.
