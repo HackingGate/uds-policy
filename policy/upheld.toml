@@ -1,0 +1,170 @@
+# What enforces which principle in this repository.
+# https://github.com/HackingGate/uphold
+#
+# One entry per rule that already fires. `rule` is the rule's own id, resolved
+# against every seam this repository runs -- the content policy and guards in
+# policy/principles.toml, and the shims declared there. The entry is checked
+# against that configuration by `uphold-check`, so it goes stale loudly when the
+# rule is removed, disabled or renamed.
+#
+# `uphold check --coverage` lists the rules in effect here that no claim names.
+# A rule missing from this file still runs; what is missing is the statement of
+# WHY it runs, which is the part a reader cannot reconstruct from the pattern.
+
+# ---------------------------------------------------------------------------
+# What this repository is about to publish
+# ---------------------------------------------------------------------------
+
+# This crate is PUBLIC and exists to be adopted elsewhere, so the push guard is
+# not here to keep code in. It is here to keep pushes aimed at this account: a
+# repository whose whole purpose is to be vendored is one whose remote gets
+# edited, and repointing `origin` leaves every other check in this tree green.
+[[enforce]]
+principle = "least-privilege"
+rule = "prevent-public-push"
+
+[[enforce]]
+principle = "fail-safe-defaults"
+rule = "prevent-public-push"
+
+# NOT CLAIMED, AND WHY. `no-published-markers` and `no-published-host-identity`
+# are declared in policy/principles.toml and they do fire -- a pull-request body,
+# an issue comment and a branch name all reach a public API without passing a
+# single git hook, which is the seam this crate's own extraction went through: it
+# was carved out of a private organisation, and that organisation's names
+# travelled in the text AROUND the code rather than in it.
+#
+# But both stand in front of a COMMAND rather than at a git hook, so no runner
+# configuration installs their seam. Their reach is a per-user `uphold shim
+# --install`, which is a property of one operator's PATH and not of this
+# repository, and a claim file should not assert a coverage no gate here can
+# assert. `uphold check` refuses the claim for exactly that reason, which is the
+# tier working as designed rather than a gap to route around.
+
+# ---------------------------------------------------------------------------
+# The private-name family, arriving from the `private-names` set
+#
+# All three read the top-level `visibility = "public"` in policy/principles.toml
+# and ARM on it, which is the opposite of what that field does in a private tree.
+# Claimed one seam at a time because they fire at different stages and one can be
+# removed without the others going quiet.
+# ---------------------------------------------------------------------------
+
+# The owner list is read from a path outside this repository, and a missing
+# source is reported rather than treated as an empty list: the difference between
+# "no private owners are named here" and "I could not find out". Without a
+# declared list a bare `owner/repo` is not seen at all, because a bare pair is
+# indistinguishable from a relative path -- and the guard would look like it was
+# running.
+[[enforce]]
+principle = "explicit-unknown"
+rule = "no-private-repo-names"
+
+[[enforce]]
+principle = "defense-in-depth"
+rule = "no-private-repo-names-in-files"
+
+[[enforce]]
+principle = "complete-mediation"
+rule = "no-private-repo-names-staged"
+
+# ---------------------------------------------------------------------------
+# What enters the history
+# ---------------------------------------------------------------------------
+
+# An author line that claims a person wrote what a tool wrote is the one
+# falsehood a git history cannot be corrected for afterwards.
+[[enforce]]
+principle = "complete-mediation"
+rule = "prevent-ai-author"
+
+# A character that renders as nothing makes the file a reviewer reads a
+# different file from the one the compiler reads. That gap is the whole of the
+# trojan-source class, and it matters here more than in most crates: this code
+# decides whether a caller is authorized, so a reviewer who cannot trust the
+# rendered order of a line cannot review the decision it makes.
+[[enforce]]
+principle = "least-astonishment"
+rule = "prevent-unusual-unicode"
+
+[[enforce]]
+principle = "defense-in-depth"
+rule = "prevent-unusual-unicode-in-files"
+
+# A merge made locally is a merge nothing reviewed, and a merge commit is where a
+# range of unreviewed commits enters the history as one line somebody skims.
+[[enforce]]
+principle = "complete-mediation"
+rule = "no-local-merge"
+
+[[enforce]]
+principle = "complete-mediation"
+rule = "no-merge-commit"
+
+# ---------------------------------------------------------------------------
+# Credentials, from the `credentials` set
+#
+# A public repository is the one place a pasted token is permanent -- rotation
+# fixes the credential and not the copy. This crate's subject is authorization,
+# so its tests and its documentation are full of things shaped like real
+# credentials, which is exactly the tree where a real one goes unnoticed.
+# ---------------------------------------------------------------------------
+
+[[enforce]]
+principle = "least-privilege"
+rule = "no-committed-secret-material"
+
+[[enforce]]
+principle = "least-privilege"
+rule = "no-committed-auth-key-values"
+
+[[enforce]]
+principle = "least-privilege"
+rule = "no-env-secret-values"
+
+# ---------------------------------------------------------------------------
+# One source for a fact, from `process-residue`, `unmanaged-pins` and
+# `hand-rolled-toolchain`
+#
+# This crate's value is largely in its comments: which behaviour exists because
+# of which failure, and what breaks if it is "simplified". A date, a status or a
+# tracker state written into one of those is a measurement nothing re-reads,
+# carried downstream as though it were still being taken.
+# ---------------------------------------------------------------------------
+
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-dated-source-metadata"
+
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-status-source-metadata"
+
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-task-tracker-references"
+
+# A version typed into a workflow line or a hook entry is a pin no manifest
+# holds and no updater reads.
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-pinned-tool-install"
+
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-hand-rolled-tool-install"
+
+# Inherited from `stale-pins` and overridden in policy/principles.toml to the
+# manual stage only, so an unrelated upstream patch release cannot block an
+# unrelated push. The claim names the rule, not the stage: `uphold check` reads
+# where it actually fires.
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-stale-hook-pins"
+
+# A base rule copied into this file by hand is a rule that has stopped moving:
+# the bundled one is re-read from the binary on every run, the copy is whatever
+# was typed the day it was typed. This is the rule that refuses the copy.
+[[enforce]]
+principle = "single-authoritative-source"
+rule = "no-hand-copied-base-rule"

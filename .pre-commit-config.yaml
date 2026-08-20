@@ -100,8 +100,14 @@ repos:
   # stage, and which rules have something to say at that stage is decided by
   # policy/principles.toml rather than here.
   - repo: https://github.com/HackingGate/uphold
-    rev: v1.5.0
+    rev: v1.6.0
     hooks:
+      # The declaration check, which the comment above named and this block did
+      # not pin. Without it policy/upheld.toml is a file nothing reads: a claim
+      # goes false the moment its rule is renamed, disabled or dropped from a
+      # set, and the whole point of writing the claim down is that the tree
+      # refuses rather than quietly enforcing one rule fewer.
+      - id: uphold-check
       - id: uphold-scan
       - id: uphold-scan-text
       - id: uphold-guard
