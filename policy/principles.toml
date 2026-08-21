@@ -154,6 +154,12 @@ match = [
   "pr:create", "pr:edit", "pr:comment", "pr:review",
   "issue:create", "issue:edit", "issue:comment",
   "release:create", "release:edit",
+  # Five that carry text and stood behind nothing until uphold 1.8.0.
+  # `pr:merge` publishes the merge commit message through flags this table
+  # already names. The four close/reopen verbs publish through `--comment`,
+  # which it cannot name here -- see the `[[shim.verbs]]` below.
+  "pr:merge",
+  "issue:close", "pr:close", "issue:reopen", "pr:reopen",
 ]
 text_flags = ["-t", "--title", "-b", "--body", "-n", "--notes", "-d", "--description"]
 file_flags = ["-F", "--body-file", "--notes-file"]
@@ -166,6 +172,20 @@ web_flags = ["-w", "--web"]
 editor_env = "GH_EDITOR"
 target = "forge-repo"
 scope = "public-target"
+
+  # `-c` is not one flag. On `gh pr review` it is a BOOLEAN -- "Comment on a
+  # pull request" -- and on `gh issue close` it TAKES A VALUE -- "Leave a
+  # closing comment". Naming it above would make `gh pr review -c -b "body"`
+  # read `-c` as consuming `-b`, so the body being published would go unread:
+  # a false negative introduced into the seam that exists to prevent one.
+  #
+  # The list REPLACES the table's for these four verbs rather than adding to
+  # it, which is why `--title` and `--body` are absent -- neither is a flag
+  # these commands accept.
+  [[shim.verbs]]
+  match = ["issue:close", "pr:close", "issue:reopen", "pr:reopen"]
+  text_flags = ["-c", "--comment"]
+
 
 # git publishes text no git hook is in a position to read. A branch name goes
 # onto a public forge in the ref list, in the pull request it suggests and in
