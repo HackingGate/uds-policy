@@ -127,7 +127,7 @@ repos:
   # stage, and which rules have something to say at that stage is decided by
   # policy/principles.toml rather than here.
   - repo: https://github.com/HackingGate/uphold
-    rev: v1.7.0
+    rev: v1.8.0
     hooks:
       # The declaration check, which the comment above named and this block did
       # not pin. Without it policy/upheld.toml is a file nothing reads: a claim
