@@ -45,6 +45,48 @@
 prek = "latest"
 
 # ---------------------------------------------------------------------------
+# The supply-chain checks. Cargo.lock records WHAT resolved; none of these four
+# tools ask that. They ask where it came from, whether anyone still maintains
+# it, and whether the name has since been reported malicious -- questions a
+# lockfile answers by construction and therefore never raises.
+# ---------------------------------------------------------------------------
+
+# Scans the committed lockfile against OSV, which ingests the OpenSSF malicious
+# packages feed alongside RUSTSEC. That second feed is the point: a `MAL-` entry
+# describes a package that resolved correctly, checksummed correctly, and was
+# malicious -- the one failure mode `--locked` cannot see, because the lockfile
+# faithfully records the compromise.
+#
+# From aqua rather than `cargo:`, which would build a Go program's Rust
+# equivalent from source on every fresh host for a tool that ships prebuilt
+# binaries for both architectures this crate is developed on.
+"aqua:google/osv-scanner" = "latest"
+
+# Static analysis for the workflows, which are the part of this repository that
+# runs with credentials and which `cargo` has no opinion about. actionlint is
+# already in the hook set and is a CORRECTNESS checker -- it will not tell you
+# that a step is unpinned or that a job inherited more permission than it uses.
+"aqua:zizmorcore/zizmor" = "latest"
+
+# The origin allow-list in deny.toml, plus the RUSTSEC unmaintained advisories
+# that have no fixed version and so can never reach you through a version bump.
+#
+# The BACKEND is pinned for the same reason a sibling workspace pins the backend
+# of its age plugin: mise's default backend for this name builds it from source,
+# and aqua resolves the upstream prebuilt binary instead. Pinning a backend is
+# not pinning a version.
+"aqua:EmbarkStudios/cargo-deny" = "latest"
+
+# The one tool here that gates a dependency BEFORE it is trusted rather than
+# reporting on one already in the tree. Every crate needs a recorded audit or an
+# inherited one from a trusted org, so a name that arrived without anyone
+# looking at it fails the build instead of merely appearing in a report.
+#
+# `cargo:` because there is no prebuilt release: upstream publishes to crates.io
+# only. This is the one row whose install cost is a compile.
+"cargo:cargo-vet" = "latest"
+
+# ---------------------------------------------------------------------------
 # What mise cannot provision, as tasks rather than as unread rows.
 # ---------------------------------------------------------------------------
 
@@ -99,4 +141,118 @@ done
   echo "run: mise install && mise run setup"
   exit 1
 }
+"""
+
+# The four questions a lockfile answers by construction and therefore never
+# raises: where a dependency came from, whether anyone maintains it, whether
+# anyone read it, and whether the name has since been reported malicious.
+#
+# A TASK RATHER THAN scripts/supply-chain.sh, which is what this replaced. The
+# script needed 21 lines to re-exec itself under mise, because mise.toml says
+# WHICH VERSION of each tool and puts nothing on PATH unless the caller's shell
+# has mise activated -- and a git hook's shell does not. The first version of
+# that script reported FAILED for a scan that had never run. A task is executed
+# BY mise, so the tools are simply there and the whole problem stops existing.
+#
+# It also puts the orchestration next to the rows declaring what it orchestrates,
+# which is the arrangement `doctor` above already uses.
+#
+# WHAT THE LOOPS ARE FOR. osv-scanner discovers its own inputs and needs none.
+# The rest do: cargo-deny takes one --manifest-path at a time (--workspace does
+# not cross submodule boundaries, and these members are separate repositories),
+# guarddog takes one manifest per invocation, and zizmor would happily audit the
+# vendored upstream/ trees if handed the root.
+[tasks.supply-chain]
+description = "origin, advisories, typosquats and workflow security"
+run = """
+set -eu
+fail=0
+bad() { printf '   FAILED: %s\\n' "$1"; fail=1; }
+note() { printf '\\n== %s\\n' "$1"; }
+# Globbing off for the whole task: the prune list must word-split without being
+# expanded against the working directory, which is what broke the first version.
+set -f
+PRUNE='-path */target -o -path */node_modules -o -path */.git -o -path */vendor -o -path */upstream'
+# find(1) with "it failed" kept distinct from "it found nothing". A scan that
+# looked at nothing must never be spelled the same way as one that found nothing
+# wrong.
+found() { find . \\( $PRUNE \\) -prune -o "$@" -print > "$1.list" 2>"$1.err" && [ ! -s "$1.err" ]; }
+T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+
+note "OSV -- known vulnerabilities and reported-malicious packages"
+# Glob form, not a bare directory name: a bare name is matched against a full
+# path, so `upstream` silently skipped nothing several levels down.
+osv-scanner scan source -r --allow-no-lockfiles \\
+  --experimental-exclude 'g:**/target/**' \\
+  --experimental-exclude 'g:**/node_modules/**' \\
+  --experimental-exclude 'g:**/upstream/**' . || bad "osv-scanner"
+
+note "zizmor -- workflow security"
+if find . \\( $PRUNE \\) -prune -o -type d -path '*/.github/workflows' -print > "$T/wf" 2>/dev/null; then
+  if [ -s "$T/wf" ]; then
+    echo "   $(wc -l < "$T/wf") workflow directories"
+    # --config named explicitly: zizmor resolves it relative to a single input
+    # path and finds none when handed several, then silently falls back to its
+    # hash-pin default and invents a backlog.
+    xargs zizmor --config "$(pwd)/zizmor.yml" --persona=regular --no-progress < "$T/wf" || bad "zizmor"
+  else echo "   no workflows here"; fi
+else bad "zizmor: could not enumerate workflow directories"; fi
+
+note "cargo-deny -- origin, advisories, bans, licenses"
+CFG="$(pwd)/deny.toml"
+if [ ! -f "$CFG" ]; then echo "   no deny.toml at the workspace root"
+elif find . \\( $PRUNE \\) -prune -o -name Cargo.toml -print > "$T/c" 2>/dev/null; then
+  n=0
+  while read -r m; do
+    grep -qE '^\\[(workspace|package)\\]' "$m" 2>/dev/null || continue
+    n=$((n+1))
+    # The EXIT CODE decides. Grepping the output for `warning[` reported
+    # cargo-deny's own informational warnings as supply-chain failures.
+    # HEADLINES ONLY. Filtering by line dropped the `warning[...]` marker and
+    # left its indented detail behind, so an allow-list entry this crate simply
+    # does not use printed four lines of ASCII art per entry. Four config-noise
+    # classes are dropped entirely -- each says something about deny.toml rather
+    # than about a dependency.
+    cargo deny --config "$CFG" --manifest-path "$m" --all-features check 2>&1 \\
+      | grep -E '^(error|warning)\\[' \\
+      | grep -vE 'license-not-encountered|unmatched-organization|unmatched-source|advisory-not-detected' || true
+    cargo deny --config "$CFG" --manifest-path "$m" --all-features check >/dev/null 2>&1 || bad "cargo-deny: $m"
+  done < "$T/c"
+  echo "   $n crates checked"
+else bad "cargo-deny: could not enumerate Cargo.toml"; fi
+
+note "cargo-vet -- has anyone looked at this dependency"
+# Conditional on the store existing: a vet store carries an exemption for every
+# dependency present the day it was created, and creating one automatically in
+# every member would produce stores nobody owns. `cargo vet init` is how a crate
+# opts in.
+if [ -d supply-chain ]; then cargo vet --locked || bad "cargo-vet"
+else echo "   no supply-chain/ store here (cargo vet init to opt in)"; fi
+
+note "guarddog -- publisher identity and typosquats"
+# The half OSV cannot reach: OSV knows packages somebody already reported, these
+# rules score an UNKNOWN one on how closely its name shadows a popular package,
+# whether its maintainer's e-mail domain lapsed, and whether its declared author
+# matches its declared repository. Metadata rules only -- the source-code rules
+# download every release and are a different job.
+G="-r typosquatting -r deceptive_author -r unclaimed_maintainer_email_domain -r potentially_compromised_email_domain -r metadata_mismatch"
+n=0
+if find . \\( $PRUNE \\) -prune -o -name uv.lock -print > "$T/py" 2>/dev/null; then
+  while read -r l; do d=$(dirname "$l"); n=$((n+1))
+    ( cd "$d" && uv export --no-hashes --no-dev --format requirements-txt ) > "$T/req" 2>/dev/null \\
+      || { bad "guarddog: uv export failed in $d"; continue; }
+    guarddog pypi verify "$T/req" $G >/dev/null 2>&1 || bad "guarddog pypi: $d"
+  done < "$T/py"
+else bad "guarddog: could not enumerate uv.lock"; fi
+if find . \\( $PRUNE \\) -prune -o -name package.json -print > "$T/js" 2>/dev/null; then
+  while read -r l; do d=$(dirname "$l"); n=$((n+1))
+    ( cd "$d" && guarddog npm verify package.json $G ) >/dev/null 2>&1 || bad "guarddog npm: $d"
+  done < "$T/js"
+else bad "guarddog: could not enumerate package.json"; fi
+echo "   $n Python/npm manifests checked"
+
+printf '\\n'
+[ "$fail" -eq 0 ] && { echo "supply chain: all checks passed"; exit 0; }
+echo "supply chain: FAILED -- see the sections marked FAILED above"
+exit 1
 """

@@ -1,0 +1,122 @@
+# deny.toml -- the four questions about a dependency that Cargo.lock records the
+# answer to but nothing was asking.
+#
+# WHAT THIS IS NOT. It is not a version check. `cargo update` and the dependency
+# bot already move versions, and `--locked` in CI already proves the tree that
+# builds is the tree that was reviewed. What none of those look at is WHO a
+# crate came from, WHETHER anyone still maintains it, and whether it is one of
+# the crates.io names that has since been reported malicious.
+#
+# The four checks below are ordered by how quietly each one fails:
+#
+#   [sources]     the only HARD boundary here. Everything else warns about a
+#                 dependency that is real; this one refuses a dependency that
+#                 came from somewhere nobody agreed to trust.
+#   [advisories]  RUSTSEC, including the unmaintained-crate advisories that have
+#                 no fixed version and so can never be resolved by a bump.
+#   [bans]        duplicate versions of the same crate, which is how two
+#                 different audited trees end up in one binary.
+#   [licenses]    the obligation check, kept last because it is the one whose
+#                 failure costs a conversation rather than a compromise.
+
+[graph]
+# Every target this crate is built for, not just the host's. A dependency that
+# only appears on aarch64 is still a dependency, and a scan that runs on the
+# maintainer's x86_64 laptop would never see it.
+targets = [
+  { triple = "x86_64-unknown-linux-gnu" },
+  { triple = "aarch64-unknown-linux-gnu" },
+]
+all-features = true
+
+# ---------------------------------------------------------------------------
+
+[advisories]
+# `deny` for unmaintained, and this is the row that earns the file. RUSTSEC
+# publishes unmaintained-crate advisories with NO fixed version -- there is no
+# release to bump to, so a dependency bot can never close one and will never
+# open a pull request about it. A dormant crates.io name with live dependents is
+# the exact shape an account takeover looks for, and until this row existed
+# nothing in this repository would ever have mentioned one.
+unmaintained = "all"
+# A yanked version in a committed lockfile means the tree builds today only
+# because a cached copy exists. That is a build that stops working on a machine
+# with a cold registry, and it is worth hearing about before that machine is CI.
+yanked = "deny"
+# Empty on purpose, and it should stay empty. An entry here is a decision to
+# ship a known-vulnerable dependency, which is a thing a person may legitimately
+# choose -- but it must be written down WITH the sentence explaining why, next
+# to the ID, or the next reader cannot tell an accepted risk from an oversight.
+ignore = []
+
+# ---------------------------------------------------------------------------
+
+[bans]
+# `warn`, not `deny`. Two versions of the same crate in one tree is a smell and
+# not an error: it usually means a transitive dependency lags, which is nobody's
+# bug and cannot be fixed from here. Denying it would make this file fail for a
+# reason the person running it has no way to act on, and a check that cannot be
+# acted on is one people learn to skip.
+multiple-versions = "warn"
+wildcards = "deny"
+deny = []
+
+# ---------------------------------------------------------------------------
+
+[licenses]
+# The allow-list is exhaustive rather than a `deny` list, for the reason every
+# other guard in this tree is written the same way: an unknown license should
+# stop the build and be looked at, not slip through because nobody predicted it.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "Unicode-3.0",
+  "Zlib",
+  # THIS WORKSPACE'S OWN LICENSE. The sibling crates are pulled in as git
+  # dependencies, so cargo-deny sees them exactly as it sees anything from
+  # crates.io and judged them against a list that did not include the licence
+  # their authors chose. Leaving it out would have meant 32 rejections that say
+  # nothing except that this file had not met the repository yet.
+  "GPL-3.0-or-later",
+  # Reached only through `colored`, a build-time dependency of
+  # varlink_generator. MPL-2.0 is file-scoped copyleft: the obligation attaches
+  # to modified MPL files, not to a binary that links them, and nothing here
+  # modifies it. Listed rather than exempted per-crate so the reason survives
+  # the next dependency that arrives under the same terms.
+  "MPL-2.0",
+]
+
+# FIRST-PARTY CRATES ARE NOT A LICENSING QUESTION. A workspace member that is
+# never published carries no obligation to anyone, and several here have no
+# `license` field at all -- which cargo-deny is right to report on a crate it
+# might have to redistribute and wrong to report on ours. Without this the check
+# emits 44 findings about our own unpublished code and buries the ones about
+# somebody else's.
+private = { ignore = true }
+# A crate whose license text is only 80% recognisable is a crate whose license
+# nobody has actually read. The default threshold silently accepts those.
+confidence-threshold = 0.93
+
+# ---------------------------------------------------------------------------
+
+[sources]
+# THE ORIGIN ALLOW-LIST, and the reason this file is not just `cargo audit`.
+#
+# Everything above asks whether a dependency is HEALTHY. This asks whether it is
+# the dependency at all. A malicious package on a legitimate registry resolves
+# cleanly, checksums cleanly, and appears in Cargo.lock indistinguishable from
+# anything else -- name and origin are the only things that separate it from the
+# crate it is imitating, and origin is the half a machine can check.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# EMPTY, AND THAT IS A CLAIM ABOUT THIS CRATE. uds-policy is public, its whole
+# purpose is to be buildable by someone who is not us, and a git dependency
+# would make that false -- a stranger cannot resolve a private URL. Any entry
+# here is a change of kind, not of degree.
+allow-git = []
