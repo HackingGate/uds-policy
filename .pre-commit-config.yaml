@@ -96,6 +96,33 @@ repos:
         pass_filenames: false
         files: ^(src|examples|tests)/.*\.rs$
 
+  # ---------------------------------------------------------------------
+  # The supply-chain gate: origin, advisories, typosquats and workflow
+  # security, none of which a lockfile can answer by construction.
+  #
+  # ONE HOOK CALLING scripts/supply-chain.sh, not four calling the tools
+  # directly. This crate is a single package and could perfectly well name the
+  # four commands here -- but the same gate runs in six sibling workspaces that
+  # are submodule trees and cannot, and a second implementation of the same
+  # check is a second place for it to be wrong. The script is what CI runs too,
+  # so a red hook and a red pipeline are the same program disagreeing with the
+  # same tree rather than two programs disagreeing with each other.
+  #
+  # AT pre-push, NOT pre-commit. Three of the four checks fetch an advisory
+  # database, and a hook that reaches the network on every `git commit` is one
+  # that fails on a train and teaches people to pass --no-verify -- which
+  # disables the whole set, not just the slow hook.
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: supply-chain
+        name: supply chain (origin, advisories, typosquats, workflows)
+        language: system
+        entry: mise
+        args: [run, supply-chain]
+        pass_filenames: false
+        stages: [pre-push, manual]
+
   # The content policy, the guards and the declaration check. Every id is a
   # stage, and which rules have something to say at that stage is decided by
   # policy/principles.toml rather than here.

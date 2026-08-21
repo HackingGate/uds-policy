@@ -1,0 +1,37 @@
+# zizmor.yml -- the workflow-security policy, and the one place it deliberately
+# departs from zizmor's default.
+#
+# THE DEFAULT IS `hash-pin`: every `uses:` must name a 40-character commit SHA.
+# That is the stronger claim and it is not the one this fleet makes, for the
+# reason policy/principles.toml already gives about versions typed into install
+# lines. A SHA is a pin whose only reader is a human: the cost of moving it is
+# paid on every routine bump, and a pin people stop moving is worse than the tag
+# they never had to move at all. `ref-pin` keeps the requirement that a `uses:`
+# name SOMETHING and leaves the choice of what at the publisher's tag.
+#
+# WHAT `ref-pin` DOES NOT BUY, stated plainly because it is the gap a reader
+# should know about: it cannot tell a tag from a branch. zizmor would have to
+# ask GitHub to know, so `some/action@main` satisfies this rule exactly as
+# `actions/checkout@v7` does. A tag is a name the publisher chose to cut and
+# Dependabot knows how to move; a branch is whatever was pushed to it last, so
+# the workflow that runs tomorrow need not be the one reviewed today and nothing
+# will ever mention the difference.
+#
+# THE ANSWER IS TO USE TAGS, NOT TO RAISE THE RULE. Every action in this
+# workspace names a published tag. The one that did not was
+# `dtolnay/rust-toolchain@stable|nightly|master` -- branch names, because that
+# action once used the branch to select the toolchain. It publishes a `v1` tag,
+# and the toolchain is an input there, so `@v1` with `toolchain: stable` is the
+# same request with a name behind it and no maintenance cost at all: `v1` is
+# what Dependabot watches, exactly like `@v7` on checkout.
+#
+# So there is no per-publisher exception below, and adding one should be a last
+# resort. If another action turns up with only a branch to offer, the first
+# question is whether it publishes a tag and the second is whether it should be
+# replaced -- pinning that one publisher to a hash is the third answer, not the
+# first.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin

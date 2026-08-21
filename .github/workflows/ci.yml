@@ -35,9 +35,12 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
         with:
+          persist-credentials: false
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
           components: clippy, rustfmt
       - name: Restore stable Rust cache
         uses: Swatinem/rust-cache@v2
@@ -56,9 +59,12 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
         with:
+          persist-credentials: false
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
           components: clippy, rustfmt
       - name: Restore stable Rust cache
         uses: Swatinem/rust-cache@v2
@@ -88,9 +94,12 @@ jobs:
       MIRIFLAGS: -Zmiri-disable-isolation
     steps:
       - uses: actions/checkout@v7
-      - name: Install Rust toolchain (nightly + Miri)
-        uses: dtolnay/rust-toolchain@nightly
         with:
+          persist-credentials: false
+      - name: Install Rust toolchain (nightly + Miri)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly
           components: miri, rust-src
       - name: Restore nightly Rust cache
         uses: Swatinem/rust-cache@v2
@@ -110,17 +119,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Read the MSRV this crate declares
         id: msrv
         run: |
           version="$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install the declared toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
       - name: Build against the MSRV
         run: cargo build --locked --all-targets
+
+  # The checks that ask about a dependency's ORIGIN and REPUTATION rather than
+  # its version. Everything else in this file proves the tree builds and passes;
+  # `--locked` even proves it is the tree that was reviewed. None of that would
+  # notice a crate that resolved perfectly, checksummed perfectly, and was
+  # reported malicious last week.
+  #
+  # Driven through mise rather than four separate marketplace actions, so the
+  # runner and a contributor's machine get the same four binaries at the same
+  # versions from the same file. Four actions would also mean four more `uses:`
+  # lines to keep honest, which is the problem one of these jobs exists to find.
+  supply-chain:
+    name: Supply chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install the declared toolchain
+        uses: jdx/mise-action@v4
+      # The same script the pre-push hook runs, so a red pipeline and a red
+      # hook are one program disagreeing with the tree rather than two.
+      - name: Run the supply-chain checks
+        run: mise run supply-chain
 
   coverage:
     name: Coverage report
@@ -129,12 +164,17 @@ jobs:
       - prek
       - rust
       - miri
+      - supply-chain
     env:
       RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
       - name: Restore stable Rust cache
         uses: Swatinem/rust-cache@v2
         with:
