@@ -72,7 +72,17 @@ private_owners_optional = true
 #                      one has already been written. A set inherited while it
 #                      still has findings is one somebody argues with; a set
 #                      inherited while the tree is clean is one nobody has to.
-sets = ["process-residue", "credentials", "unmanaged-pins", "hand-rolled-toolchain", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "stale-pins", "unowned-push"]
+#   published-text  -- the two checkers below used to be written out here by
+#                      hand, which is a rule that has stopped moving: the
+#                      bundled one is re-read from the binary on every run and a
+#                      copy is whatever was typed the day it was typed. Taking
+#                      the set also brings the third rule the copy never had,
+#                      `no-published-private-repo-names`, which reads the same
+#                      owner list as the `private-names` guards and applies it to
+#                      a pull-request body -- the seam that let the private
+#                      organisation this crate was extracted from reach this
+#                      repository's pull request in the first place.
+sets = ["process-residue", "credentials", "unmanaged-pins", "hand-rolled-toolchain", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "published-text", "stale-pins", "unowned-push"]
 
 # ---------------------------------------------------------------------------
 # Guards -- what git is about to do.
@@ -117,33 +127,17 @@ git.hooks = ["manual"]
 # private organisation this crate was extracted from reached this repository's
 # pull request while every git-side guard was green.
 #
-# The checker contract: the subject on stdin, its kind in UPHOLD_KIND, 0 to
-# pass, 1 to refuse, 2 to say it could not look. Both of these are the binary
-# consulting itself, which is the point -- the rule that judges a commit message
-# and the rule that judges a pull-request body are the SAME rule, and a second
-# implementation of it would agree until it did not.
+# The three checkers arrive with the `published-text` set and are not written
+# out here. Each is the binary consulting itself, which is the point -- the rule
+# that judges a commit message and the rule that judges a pull-request body are
+# the SAME rule, and a second implementation of it would agree until it did not.
+# All three stand in front of `gh` and `git push`, and `git push` belongs there
+# as much as `gh` does: a branch name goes onto a public forge in the ref list,
+# in the pull request it suggests and in every notification, and pre-push is
+# handed the refs but the guards that read them judge the DESTINATION and never
+# the name. This crate is tracked by a private issue, so a reference that is
+# correct in the tracker is a disclosure here.
 # ---------------------------------------------------------------------------
-
-[rule.no-published-markers]
-message = """
-A pull-request body, an issue comment and a branch name all reach a public API
-without passing a git hook. This crate is tracked by a private issue, so a
-reference that is correct in the tracker is a disclosure here.
-"""
-exec = "uphold guard --text -"
-# `git push` belongs here as much as `gh` does. A branch name goes onto a public
-# forge in the ref list, in the pull request it suggests and in every
-# notification; pre-push is handed the refs, but the guards that read them judge
-# the DESTINATION and never the name.
-command.before = ["gh", "git push"]
-
-[rule.no-published-host-identity]
-message = """
-Use neutral placeholders -- example-user, example-host, example.test -- instead
-of values read off the machine you are standing on.
-"""
-exec = "uphold scan --text -"
-command.before = ["gh", "git push"]
 
 # Subcommands are NAMED rather than pattern-matched. A shim that guesses which
 # ones carry text is one release away from either missing a new one in silence
