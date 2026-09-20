@@ -154,10 +154,9 @@ rule = "no-pinned-tool-install"
 principle = "single-authoritative-source"
 rule = "no-hand-rolled-tool-install"
 
-# Inherited from `stale-pins` and overridden in policy/principles.toml to the
-# manual stage only, so an unrelated upstream patch release cannot block an
-# unrelated push. The claim names the rule, not the stage: `uphold check` reads
-# where it actually fires.
+# Inherited from `stale-pins`, which ships it at the manual stage alone, so an
+# unrelated upstream patch release cannot block an unrelated push. The claim
+# names the rule, not the stage: `uphold check` reads where it actually fires.
 [[enforce]]
 principle = "single-authoritative-source"
 rule = "no-stale-hook-pins"
