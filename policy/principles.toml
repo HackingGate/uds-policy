@@ -18,37 +18,6 @@ owner = "HackingGate"
 # answer matters. The set refuses to load without this line for that reason.
 visibility = "public"
 
-# Read from OUTSIDE the repository, which matters more here than in a private
-# tree: this policy is world-readable, so a literal list of the owners it exists
-# to protect would be the disclosure the rule refuses. Top-level rather than on a
-# rule, because a rule arriving from a bundled set cannot be handed a parameter.
-# The set deliberately does not ship the command: a bundled set carrying a shell
-# line would run it in every inheriting repository on a version bump. A missing
-# source is an error rather than an empty list, because a rule with no owners
-# refuses nothing and would report a clean tree.
-private_owners_from = "cat ${XDG_CONFIG_HOME:-$HOME/.config}/principles/private-owners"
-
-# …and the line that lets the line above survive leaving the machine it was
-# written on. The source it names is one operator's file: absent in every clone,
-# and absent on a CI runner. The default just above turns that absence into exit
-# 2, which is what it did — the Prek job refused every push over a file that
-# exists nowhere but the author's laptop, while Miri, the tests and MSRV passed
-# beside it.
-#
-# The two obvious repairs are both worse. Dropping `private_owners_from`
-# surrenders the forms that only a DECLARED owner list can see: a bare
-# `otherowner/repo`, indistinguishable from a relative path without one, and an
-# organisation named on its own. Those are precisely the shapes a world-readable
-# repository leaks. Appending `|| true` to the command buys the same green while
-# losing them in silence, everywhere, permanently.
-#
-# This is the third answer: the missing source is reported on stderr, naming
-# what is no longer being checked, and the run proceeds. Where the file IS
-# present — the machine this policy is authored on — nothing changes and every
-# form is still refused. Setting this with no `private_owners_from` anywhere is
-# refused at load, so the exemption cannot outlive the source it excuses.
-private_owners_optional = true
-
 [inherit]
 # Each set is named because taking it is a separate decision:
 #
@@ -57,6 +26,10 @@ private_owners_optional = true
 #                      breaks if it is "simplified". Those are the notes someone
 #                      reads while deciding whether to change a line, and
 #                      residue in them is read as part of the answer.
+#   code-residue    -- the every-file tracker-reference scope, which 1.19.0
+#                      moved out of process-residue under its own name: the
+#                      tree already passed it under 1.18.0, so this keeps the
+#                      check it had.
 #   credentials     -- a public repository is the one place a pasted token is
 #                      permanent, and this crate's subject is authorization, so
 #                      its examples and tests are full of things shaped like
@@ -82,7 +55,7 @@ private_owners_optional = true
 #                      a pull-request body -- the seam that let the private
 #                      organisation this crate was extracted from reach this
 #                      repository's pull request in the first place.
-sets = ["process-residue", "credentials", "unmanaged-pins", "hand-rolled-toolchain", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "published-text", "stale-pins", "unowned-push"]
+sets = ["process-residue", "code-residue", "credentials", "unmanaged-pins", "hand-rolled-toolchain", "commit-message-residue", "invisible-characters", "unreviewed-history", "private-names", "published-text", "stale-pins", "unowned-push"]
 
 # ---------------------------------------------------------------------------
 # Guards -- what git is about to do.
@@ -110,14 +83,6 @@ sets = ["process-residue", "credentials", "unmanaged-pins", "hand-rolled-toolcha
 # `prevent-public-push` is inherited from `unowned-push` and is not written out
 # here. The copy said `builtin`, `git.hooks = ["pre-push"]` and an `owner` the
 # top of this file already declares -- nothing the set does not say.
-
-# Inherited from `stale-pins` and deliberately overridden: the set ships
-# `pre-push` as well as `manual`, and this repository runs it at `manual` only
-# so an unrelated upstream patch release cannot block an unrelated push. An own
-# rule of the same id replaces the inherited one whole.
-[rule.no-stale-hook-pins]
-builtin = "no-stale-hook-pins"
-git.hooks = ["manual"]
 
 # ---------------------------------------------------------------------------
 # Checkers and shims -- what a command is about to publish.
