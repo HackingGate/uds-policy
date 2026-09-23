@@ -47,10 +47,12 @@ jobs:
         with:
           shared-key: rust-stable-v1
           save-if: "false"
-      - name: Run prek (skip duplicate test hooks)
+      - name: Run prek (skip duplicate test hooks and the staged-diff gitleaks gate)
         uses: j178/prek-action@v2
         env:
-          SKIP: cargo-test,cargo-miri
+          # uphold-supply-chain-staged judges the staged diff at pre-commit; CI has
+          # no staged diff and no gitleaks, so it is a local-commit gate only.
+          SKIP: cargo-test,cargo-miri,uphold-supply-chain-staged
 
   rust:
     name: Rust (tests + build)

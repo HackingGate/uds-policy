@@ -110,13 +110,15 @@ rule = "no-merge-commit"
 # credentials, which is exactly the tree where a real one goes unnoticed.
 # ---------------------------------------------------------------------------
 
+# gitleaks refuses a committed key or token: `uphold-supply-chain-staged` runs it
+# over the staged diff at pre-commit, so a secret is stopped before it is in local
+# history, with gitleaks' token formats, entropy thresholds and allowlists. It
+# carries what `no-committed-secret-material` and `no-committed-auth-key-values`
+# claimed until uphold v1.20.0 deprecated both in gitleaks' favour; they still run
+# until the release that removes them, but they no longer carry the claim.
 [[enforce]]
 principle = "least-privilege"
-rule = "no-committed-secret-material"
-
-[[enforce]]
-principle = "least-privilege"
-rule = "no-committed-auth-key-values"
+rule = "uphold-supply-chain-staged"
 
 [[enforce]]
 principle = "least-privilege"
