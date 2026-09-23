@@ -142,3 +142,6 @@ repos:
       - id: uphold-guard-merge
       - id: uphold-guard-push
       - id: uphold-guard-manual
+      # gitleaks over the staged diff, so a secret is refused before it is in
+      # local history. It carries the credentials claim in policy/upheld.toml.
+      - id: uphold-supply-chain-staged
