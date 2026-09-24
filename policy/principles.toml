@@ -107,6 +107,25 @@ sets = ["process-residue", "code-residue", "credentials", "unmanaged-pins", "han
 # Subcommands are NAMED rather than pattern-matched. A shim that guesses which
 # ones carry text is one release away from either missing a new one in silence
 # or blocking one that never carried any, and only the first failure is visible.
+# The domain-freedom assertion, run as a check rather than left as a promise in
+# the README. This crate exists to be adopted by daemons that agree about nothing
+# except that they have a Unix socket, and one leaked identifier from any
+# consumer's problem domain is enough to make the next adoption impossible --
+# quietly, at review time, months later.
+#
+# `examples/` and `tests/` are in scope: the example is the first file a stranger
+# reads, and a test is where a real contract's vocabulary is most tempting to
+# reach for. The floor keeps a renamed or emptied directory from reading as a
+# clean tree.
+[rule.no-domain-knowledge]
+message = """
+Domain knowledge leaked into src/, examples/ or tests/. This crate knows nothing
+about what it serves.
+"""
+regexp = '(?i)vfio|libvirt|route.?config|network'
+files.include = ["src", "examples", "tests"]
+files.min_selected = 1
+
 [[shim]]
 command = "gh"
 match = [

@@ -47,12 +47,12 @@ jobs:
         with:
           shared-key: rust-stable-v1
           save-if: "false"
-      - name: Run prek (skip duplicate test hooks and the staged-diff gitleaks gate)
+      - name: Run prek (skip the staged-diff gitleaks gate)
         uses: j178/prek-action@v2
         env:
           # uphold-supply-chain-staged judges the staged diff at pre-commit; CI has
-          # no staged diff and no gitleaks, so it is a local-commit gate only.
-          SKIP: cargo-test,cargo-miri,uphold-supply-chain-staged
+          # no staged diff, so it is a local-commit gate only.
+          SKIP: uphold-supply-chain-staged
 
   rust:
     name: Rust (tests + build)
@@ -141,10 +141,8 @@ jobs:
   # notice a crate that resolved perfectly, checksummed perfectly, and was
   # reported malicious last week.
   #
-  # Driven through mise rather than four separate marketplace actions, so the
-  # runner and a contributor's machine get the same four binaries at the same
-  # versions from the same file. Four actions would also mean four more `uses:`
-  # lines to keep honest, which is the problem one of these jobs exists to find.
+  # The scanners come from mise, so the runner and a contributor's machine get
+  # the same versions from the same file; uphold finds them on PATH.
   supply-chain:
     name: Supply chain
     runs-on: ubuntu-latest
@@ -154,10 +152,8 @@ jobs:
           persist-credentials: false
       - name: Install the declared toolchain
         uses: jdx/mise-action@v4
-      # The same script the pre-push hook runs, so a red pipeline and a red
-      # hook are one program disagreeing with the tree rather than two.
       - name: Run the supply-chain checks
-        run: mise run supply-chain
+        run: prek run uphold-supply-chain-all --all-files --hook-stage manual --color always
 
   coverage:
     name: Coverage report
