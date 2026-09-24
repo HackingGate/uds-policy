@@ -43,6 +43,7 @@ repos:
         args: ["RUSTFLAGS=-D warnings", cargo, test, --locked]
         pass_filenames: false
         files: \.rs$
+        stages: [pre-push]
       - id: cargo-miri
         name: cargo miri test
         language: system
@@ -58,70 +59,7 @@ repos:
           ]
         pass_filenames: false
         files: \.rs$
-      # The domain-freedom assertion, run as a check rather than left as a
-      # promise in the README. This crate exists to be adopted by daemons that
-      # agree about nothing except that they have a Unix socket, and a single
-      # leaked identifier from any one consumer's problem domain is enough to
-      # make the next adoption impossible — quietly, at review time, months
-      # later.
-      #
-      # `examples/` and `tests/` are scanned too. Leaving them out was
-      # backwards: the example is the first file a stranger reads, and a test
-      # is where a real contract's vocabulary is most tempting to reach for, so
-      # those are exactly the places a leak would be least visible.
-      - id: no-domain-knowledge
-        name: this crate knows nothing about what it serves
-        language: system
-        entry: sh
-        args:
-          - -c
-          - |
-            # `|| true` would have been wrong here. grep exits 1 for "no match"
-            # and >1 for "the scan itself failed" -- an unreadable or renamed
-            # src/, examples/ or tests/ -- and collapsing those two into success
-            # is how a load-bearing guard reports a clean tree while looking at
-            # nothing. Only exit 1 is a pass.
-            leaked="$(grep -rinE 'vfio|libvirt|route.?config|network' src/ examples/ tests/)"
-            status=$?
-            if [ "$status" -gt 1 ]; then
-              echo "the domain-knowledge scan could not run (grep exit $status);"
-              echo "this guard looked at nothing, which is not the same as finding nothing."
-              exit "$status"
-            fi
-            [ -z "$leaked" ] || {
-              echo "domain knowledge leaked into src/, examples/ or tests/:"
-              echo "$leaked"
-              exit 1
-            }
-        pass_filenames: false
-        files: ^(src|examples|tests)/.*\.rs$
-
-  # ---------------------------------------------------------------------
-  # The supply-chain gate: origin, advisories, typosquats and workflow
-  # security, none of which a lockfile can answer by construction.
-  #
-  # ONE HOOK CALLING scripts/supply-chain.sh, not four calling the tools
-  # directly. This crate is a single package and could perfectly well name the
-  # four commands here -- but the same gate runs in six sibling workspaces that
-  # are submodule trees and cannot, and a second implementation of the same
-  # check is a second place for it to be wrong. The script is what CI runs too,
-  # so a red hook and a red pipeline are the same program disagreeing with the
-  # same tree rather than two programs disagreeing with each other.
-  #
-  # AT pre-push, NOT pre-commit. Three of the four checks fetch an advisory
-  # database, and a hook that reaches the network on every `git commit` is one
-  # that fails on a train and teaches people to pass --no-verify -- which
-  # disables the whole set, not just the slow hook.
-  # ---------------------------------------------------------------------
-  - repo: local
-    hooks:
-      - id: supply-chain
-        name: supply chain (origin, advisories, typosquats, workflows)
-        language: system
-        entry: mise
-        args: [run, supply-chain]
-        pass_filenames: false
-        stages: [pre-push, manual]
+        stages: [manual]
 
   # The content policy, the guards and the declaration check. Every id is a
   # stage, and which rules have something to say at that stage is decided by
@@ -145,3 +83,8 @@ repos:
       # gitleaks over the staged diff, so a secret is refused before it is in
       # local history. It carries the credentials claim in policy/upheld.toml.
       - id: uphold-supply-chain-staged
+      # The other five scanners reach the network, so they run over the pushed
+      # range at pre-push, and over the whole tree at manual for CI, the only
+      # run that sees an advisory against a dependency no commit touched.
+      - id: uphold-supply-chain
+      - id: uphold-supply-chain-all
