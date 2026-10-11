@@ -151,7 +151,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install the declared toolchain
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@v5
       - name: Run the supply-chain checks
         run: prek run uphold-supply-chain-all --all-files --hook-stage manual --color always
 
