@@ -15,7 +15,7 @@ categories = ["os::unix-apis", "authentication"]
 # SO_PEERCRED, SO_RCVTIMEO and the NSS lookups, in a wrapper that needs no
 # `unsafe` here. See README.md for why this crate does not reach for the
 # private, Zig-backed bridge the same code used before it was extracted.
-nix = { version = "0.31", features = ["socket", "time", "user"] }
+nix = { version = "0.32", features = ["socket", "time", "user"] }
 
 [dev-dependencies]
 tempfile = "3.26"
